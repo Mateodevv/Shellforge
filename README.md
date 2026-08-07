@@ -184,6 +184,55 @@ WordPress. A scenario that names one is doing so deliberately —
 against Joomla would produce a case that could not have happened, so the
 registry refuses the pairing rather than generating it.
 
+## Case evolution: does a decision still mean anything?
+
+Shellhound promises that "triage states survive re-scans; fingerprints are
+stable", and everything about how an analyst works depends on it. Evidence
+arrives in instalments — a second webroot copy, another week of logs — the
+case is re-scanned, and the decisions already made either survive or they do
+not. If they do not, nobody finds out by reading the screen: an artifact that
+quietly went back to undecided looks exactly like one nobody has got to yet.
+
+```bash
+python -m shellforge evolve --scenario wp-upload-shell --shellhound ../shellhound
+```
+
+This is the only check here that does not score findings against a ground
+truth. It compares **two runs of the same case** with a human decision in
+between: generate v1 → analyse → decide (confirm, dismiss, review) → generate
+v2 with a second wave **into the same directory** → re-scan the same
+`case.db` → is every decision still attached to what it was made about?
+
+The decisions land on exactly the artifacts the second wave will touch,
+worked out from v1's own ground truth. Three roles, and the difference
+between them is the point:
+
+| Role | What happens to it | Expected |
+|---|---|---|
+| `log_only` | the attacker returns and fetches the shell again; the file is untouched | decision holds |
+| `appended` | the shell gains lines *after* its payload | line unchanged, fingerprint holds |
+| `prepended` | the shell gains lines *before* its payload | the finding **moves** |
+
+### What it found
+
+```
+SPLIT -- the decision survived, what it describes did not
+  01/cache-warm.php: webshell.obfuscation
+      reviewed at line 2, where there is now nothing
+      new and undecided at line 4, where the payload actually is
+```
+
+The fingerprint is `source|rule|artifact|line`. Edit a file *above* its
+payload and every content finding in it moves — so the old finding keeps the
+decision while describing a line that no longer holds, and the real one comes
+back undecided. The analyst is asked twice and the case reports one problem as
+two. Positional rules (`upload_php`, `double_ext`) are stored with `line=None`
+and are unaffected, which is why the check insists the prepended file has a
+content rule at all.
+
+`SPLIT` is reported every run and does not fail the build — the same
+convention `ghost-shell` uses for a reproduced, already-documented defect.
+
 ## Hostile axes
 
 An axis reshapes **finished evidence**. `wp-upload-shell` describes an

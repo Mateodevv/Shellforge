@@ -103,6 +103,16 @@ jobs:
         # -- a byte-order mark, a Latin-1 log, malformed lines between good
         # ones, 677 clients, a database clock two hours out.
         run: python -m shellforge check --all --hostile all --shellhound ../shellhound
+      - name: Decisions across a re-scan
+        working-directory: shellforge
+        # The one check that is not about findings: v1, a human decision, v2
+        # into the same case, and then whether the decision still means
+        # anything. Scenarios with no file artifacts skip themselves.
+        run: |
+          for s in wp-upload-shell shell-kit false-guard ghost-shell; do
+            python -m shellforge evolve --scenario "$s" --shellhound ../shellhound
+          done
+          python -m shellforge evolve --scenario joomla-helix3 --cms joomla --shellhound ../shellhound
       - name: Score at scale
         working-directory: shellforge
         # A quarter of a million log lines, rotated and gzipped. This is

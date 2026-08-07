@@ -210,6 +210,81 @@ def cmd_check(args) -> int:
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+def cmd_evolve(args) -> int:
+    """v1, a human decision, v2 into the same case, then compare.
+
+    The only command here that does not score findings against a ground
+    truth. What it checks is whether a DECISION still means anything after
+    more evidence arrived -- which is a promise about the case database, not
+    about the rules.
+    """
+    from shellforge import evolve
+    from shellforge.runner import analyse
+
+    workdir = Path(args.out) if args.out else Path(
+        tempfile.mkdtemp(prefix="shellforge-evolve-"))
+    keep = bool(args.out)
+    common = dict(scenario=args.scenario, cms=args.cms, seed=args.seed,
+                  scale=args.scale, out=workdir,
+                  log_format=args.log_format, rotate_days=args.rotate_days,
+                  verify=not args.no_verify_readable)
+    try:
+        v1 = generate(**common)
+        case_path = Path(v1["case_dir"])
+        sh = case_path / "shellhound-case"
+        analyse(sh, webroot=case_path / "webroot", logs=case_path / "logs",
+                dump=case_path / "dump.sql", shellhound=Path(args.shellhound))
+        print(f"v1         {v1['files']} files, {v1['requests']} log lines, "
+              f"{v1['planted']} planted")
+
+        # The decisions land on exactly the artifacts the second wave will
+        # touch, worked out from v1's own ground truth. Deciding about the
+        # three worst findings instead would pass while testing none of the
+        # edges the case was built around.
+        v1_truth = load_truth(case_path / "ground_truth.json")
+        decided = evolve.decide(sh / "case.db", evolve.targets(v1_truth))
+        if not decided:
+            print("skipped    this scenario plants no file artifacts, so "
+                  "there is nothing a second wave could edit and no "
+                  "decision to carry across")
+            return 0
+        before = evolve.snapshot(sh / "case.db")
+        print("decided    " + ", ".join(
+            f"{Path(a).name}={s}" for a, s in decided.items()))
+
+        # SAME DIRECTORY, same seed. Only what the attacker did next differs.
+        v2 = generate(**common, evolve=True)
+        assert Path(v2["case_dir"]) == case_path, "v2 landed elsewhere"
+        analyse(sh, webroot=case_path / "webroot", logs=case_path / "logs",
+                dump=case_path / "dump.sql", shellhound=Path(args.shellhound))
+        print(f"v2         {v2['files']} files, {v2['requests']} log lines, "
+              f"{v2['planted']} planted")
+        print()
+
+        after = evolve.snapshot(sh / "case.db")
+        result = evolve.compare(before, after, decided)
+        print(evolve.report(result))
+
+        # The findings score still has to hold for v2 on its own terms: a
+        # case that kept every decision and stopped detecting things would
+        # pass the comparison and be worthless.
+        truth = load_truth(case_path / "ground_truth.json")
+        findings = read_findings(sh / "case.db")
+        scored = score(truth, findings)
+        print()
+        print(f"v2 findings score: recall {scored.recall:.1%}, "
+              f"precision {scored.precision:.1%}")
+        if not scored.ok:
+            print()
+            print(report(scored, truth, None))
+        if keep:
+            print(f"\ncase kept at {case_path}")
+        return 0 if evolve.ok(result) and scored.ok else 1
+    finally:
+        if not keep:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
 def cmd_scenarios(args) -> int:
     for name in scenarios.names():
         print(name)
@@ -248,6 +323,15 @@ def main(argv=None) -> int:
                          "all of them. Per case, coverage only says what one "
                          "narrative touched")
     ck.set_defaults(func=cmd_check)
+
+    ev = sub.add_parser(
+        "evolve",
+        help="v1, decide, v2 into the same case, then check the decisions")
+    _add_gen_args(ev)
+    ev.add_argument("--shellhound", default=str(DEFAULT_SHELLHOUND))
+    ev.add_argument("--out", default=None,
+                    help="keep the case here instead of a temporary directory")
+    ev.set_defaults(func=cmd_evolve)
 
     ls = sub.add_parser("scenarios", help="list what can be generated")
     ls.set_defaults(func=cmd_scenarios)

@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 
+from shellforge import evolve as evolve_mod
 from shellforge import hostile as hostile_mod
 from shellforge import scenarios
 from shellforge.render import accesslog, errorlog, sqldump, webroot
@@ -40,7 +41,7 @@ def _slug(scenario: str, cms: str, seed: int, scale: str, hostile=()) -> str:
 def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
              scale: str = "small", out: Path, log_format: str = "apache",
              rotate_days: int = 0, verify: bool = True,
-             hostile=()) -> dict:
+             hostile=(), evolve: bool = False) -> dict:
     if cms not in WORLDS:
         raise KeyError(f"unknown cms {cms!r}; have: {', '.join(WORLDS)}")
 
@@ -59,6 +60,16 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     # than a hope.
     if hostile:
         hostile_mod.apply(list(hostile), case, rng.derive("hostile"))
+
+    # The second wave comes LAST and reuses the same seed, so v1 and v2 share
+    # a world byte for byte and differ only by what the attacker did next.
+    # The slug deliberately does not mention it: v2 is written into the SAME
+    # directory as v1, because that is what re-copying evidence into an
+    # existing case looks like -- and because the fingerprint contains an
+    # absolute path, so a second directory would orphan every decision for a
+    # reason that has nothing to do with Shellhound.
+    if evolve:
+        evolve_mod.second_wave(case, rng.derive("evolve"))
 
     case_dir = Path(out) / _slug(scenario, cms, seed, scale, hostile)
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +130,7 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
         "case_dir": str(case_dir),
         "scenario": scenario, "cms": cms, "seed": seed, "scale": scale,
         "hostile": list(hostile),
+        "evolved": bool(evolve),
         "files": len(case.files),
         "requests": len(case.requests),
         "error_lines": len(case.error_lines),

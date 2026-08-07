@@ -380,6 +380,59 @@ class ScenarioRegistry(unittest.TestCase):
         finally:
             base_dir.cleanup()
 
+    def test_a_second_wave_extends_the_case_without_rewriting_it(self):
+        """v2 is v1 plus what happened next, in the same place.
+
+        Two properties the evolution check depends on and neither of which is
+        obvious from reading it: v2 must land in the SAME directory (the
+        fingerprint contains an absolute path, so a second directory would
+        orphan every decision for a reason that is not Shellhound's), and v2's
+        ground truth must CONTAIN v1's rather than replace it.
+        """
+        from shellforge import evolve
+        with tempfile.TemporaryDirectory() as tmp:
+            v1 = generate(scenario="wp-upload-shell", seed=11, out=Path(tmp))
+            t1 = json.loads((Path(v1["case_dir"]) / "ground_truth.json")
+                            .read_text("utf-8"))
+            v2 = generate(scenario="wp-upload-shell", seed=11, out=Path(tmp),
+                          evolve=True)
+            t2 = json.loads((Path(v2["case_dir"]) / "ground_truth.json")
+                            .read_text("utf-8"))
+
+            self.assertEqual(v1["case_dir"], v2["case_dir"],
+                             "v2 landed somewhere else; every decision would "
+                             "be orphaned by the path, not by the re-scan")
+            self.assertGreater(len(t2["planted"]), len(t1["planted"]),
+                               "the second wave planted nothing")
+            idents1 = {p["ident"] for p in t1["planted"]}
+            idents2 = {p["ident"] for p in t2["planted"]}
+            self.assertTrue(idents1 <= idents2,
+                            f"v2 lost plants from v1: {idents1 - idents2}")
+            self.assertGreater(v2["requests"], v1["requests"])
+
+    def test_the_evolution_roles_land_on_files_that_can_move(self):
+        """The prepended file must have a rule that carries a line number.
+
+        A positional rule (`upload_php`, `double_ext`) is stored with
+        `line=None`, so prepending to a file whose only finding is positional
+        moves nothing -- the case would pass while exercising the one edge it
+        was built for. This asserts the choice, because the first version of
+        it got this wrong.
+        """
+        from shellforge import evolve
+        with tempfile.TemporaryDirectory() as tmp:
+            v1 = generate(scenario="wp-upload-shell", seed=11, out=Path(tmp))
+            truth = json.loads((Path(v1["case_dir"]) / "ground_truth.json")
+                               .read_text("utf-8"))
+            roles = evolve.targets(truth)
+            self.assertIsNotNone(roles["prepended"])
+            rules = next(set(p["expect_rules"]) for p in truth["planted"]
+                         if p["ident"] == roles["prepended"])
+            self.assertTrue(
+                rules - evolve.LOCATIONAL,
+                f"{roles['prepended']} only has positional rules {rules}; "
+                f"prepending to it moves no line and proves nothing")
+
     def test_no_two_scenarios_produce_the_same_case(self):
         """A scenario whose narrative silently stopped running would still
         generate a valid case -- the world builds either way. Identical

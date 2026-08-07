@@ -209,7 +209,19 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
-### Sechs Befunde aus dem Bau
+### Sieben Befunde aus dem Bau
+
+**Eine Datei über ihrer Nutzlast zu ändern spaltet die Entscheidung.** Der
+Fingerprint ist `source|rule|artifact|line`. Fügt ein Angreifer Zeilen *vor*
+der Nutzlast ein, wandert jedes Content-Finding der Datei — das alte behält
+die Triage-Entscheidung und beschreibt eine Zeile, an der nichts mehr steht,
+das zutreffende kommt unentschieden zurück. Gemessen an `cache-warm.php`:
+`webshell.obfuscation` steht danach zweimal in der Tabelle, Zeile 2 als
+`reviewed` und Zeile 4 als `new`. Der Analyst wird zweimal gefragt, und der
+Fall meldet ein Problem als zwei. Positionsregeln (`upload_php`,
+`double_ext`) sind mit `line=None` gespeichert und bleiben korrekt erhalten.
+Reproduziert von `shellforge evolve`, dort als `SPLIT` gemeldet.
+
 
 **Shellforge hat eine Verhaltensänderung in Shellhound erkannt, und zwar
 sofort.** Zwischen zwei Läufen kam Shellhounds Commit *„Das Werkzeug hat den

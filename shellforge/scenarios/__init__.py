@@ -55,6 +55,15 @@ class Case:
     #: Seconds the DATABASE clock runs ahead of the log clock.
     clock_skew: int = 0
 
+    # --- what a second wave changed (see shellforge/evolve.py) ------------
+    #: Artifacts the second wave ADDED. They must arrive undecided.
+    evolved_new: list = field(default_factory=list)
+    #: Artifacts it appended to -- payload keeps its line, fingerprint holds.
+    evolved_appended: list = field(default_factory=list)
+    #: Artifacts it prepended to -- the payload MOVED, so `line` changed and
+    #: with it the fingerprint. The sharp edge.
+    evolved_prepended: list = field(default_factory=list)
+
     #: Paths to make unreadable AFTER writing and verifying them. POSIX only;
     #: see `generate.generate`. This is the only way to exercise the rule
     #: about a file the scanner could not open, and the only reason a case
