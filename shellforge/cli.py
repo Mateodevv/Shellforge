@@ -71,12 +71,13 @@ def cmd_score(args) -> int:
     return 0 if result.ok else 1
 
 
-def _run_one(args, scenario: str, workdir: Path, quiet: bool = False):
+def _run_one(args, scenario: str, workdir: Path, quiet: bool = False,
+             cms: str = ""):
     """Generate, analyse and score one scenario. Returns (result, truth)."""
     from shellforge.runner import analyse
 
     summary = generate(
-        scenario=scenario, cms=args.cms, seed=args.seed,
+        scenario=scenario, cms=cms or args.cms, seed=args.seed,
         scale=args.scale, out=workdir, log_format=args.log_format,
         rotate_days=args.rotate_days, verify=not args.no_verify_readable)
     case_path = Path(summary["case_dir"])
@@ -120,25 +121,35 @@ def cmd_check(args) -> int:
         # what one narrative happened to touch, which is not a fact about the
         # rule set. Measured over the whole catalogue it says which rules no
         # case in this repository can fail on -- and that is the work list.
+        # EVERY VALID PAIRING, not every scenario. A scenario that runs
+        # against both profiles is two cases, and the Joomla one exercises a
+        # different account parser, a different version file and a different
+        # writable directory -- which is the entire reason the world and the
+        # narrative were separated.
+        from shellforge.generate import WORLDS
+        pairs = [(scenario, cms)
+                 for cms in sorted(WORLDS)
+                 for scenario in scenarios.names(cms)]
+
         fired: set = set()
         failed = []
-        print(f"{'scenario':<20} {'recall':>8} {'precision':>10} "
+        print(f"{'scenario':<24} {'cms':<10} {'recall':>8} {'precision':>10} "
               f"{'rules':>6}   result")
-        print("-" * 60)
-        for scenario in scenarios.names():
+        print("-" * 72)
+        for scenario, cms in pairs:
             result, truth, _path = _run_one(args, scenario, workdir,
-                                            quiet=True)
+                                            quiet=True, cms=cms)
             fired |= result.fired_rules
             status = "ok" if result.ok else "FAIL"
             if not result.ok:
-                failed.append((scenario, result, truth))
-            print(f"{scenario:<20} {result.recall:>7.1%} "
+                failed.append((f"{scenario} [{cms}]", result, truth))
+            print(f"{scenario:<24} {cms:<10} {result.recall:>7.1%} "
                   f"{result.precision:>10.1%} "
                   f"{len(result.fired_rules):>6}   {status}")
         print()
 
-        for scenario, result, truth in failed:
-            print(f"===== {scenario} =====")
+        for label, result, truth in failed:
+            print(f"===== {label} =====")
             print(report(result, truth, None))
             print()
 
@@ -154,7 +165,7 @@ def cmd_check(args) -> int:
                 for rule in cov["never_fired"]:
                     print(f"  {rule}")
         print()
-        print("PASS" if not failed else f"FAIL ({len(failed)} scenario(s))")
+        print("PASS" if not failed else f"FAIL ({len(failed)} case(s))")
         if keep:
             print(f"\ncases kept at {workdir}")
         return 1 if failed else 0

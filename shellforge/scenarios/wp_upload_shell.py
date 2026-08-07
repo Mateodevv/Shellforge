@@ -83,11 +83,11 @@ def _file_manager_files(version: str) -> dict:
     }
 
 
-@register("wp-upload-shell")
+@register("wp-upload-shell", cms=("wordpress",))
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="wp-upload-shell",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
 
     start = datetime(2026, 1, 5)

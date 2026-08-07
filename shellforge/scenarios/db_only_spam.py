@@ -32,7 +32,7 @@ from shellforge.world import Row, SCALES
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="db-only-spam",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
     start = datetime(2026, 1, 5)
     hit_day = start + timedelta(days=int(days * 0.5))
@@ -43,11 +43,15 @@ def build(rng, site, scale: str = "small") -> Case:
                                                     start, days)
 
     # --- injected into published content -----------------------------------
-    posts = [r for r in site.rows if r.table == "posts"]
+    # The table and the column come from the profile: `posts.post_content` in
+    # WordPress, `content.introtext` in Joomla. Naming either one here would
+    # make this a scenario about one CMS instead of about injected content.
+    body = site.content_column
+    posts = [r for r in site.rows if r.table == site.content_table]
     victims = rng.sample(posts, min(3, len(posts)))
-    victims[0].values["post_content"] += markers.DB_IFRAME
+    victims[0].values[body] += markers.DB_IFRAME
     if len(victims) > 1:
-        victims[1].values["post_content"] += markers.DB_SCRIPT
+        victims[1].values[body] += markers.DB_SCRIPT
     if len(victims) > 2:
         # NO `<script>` WRAPPER AROUND THIS ONE, deliberately. Written the
         # obvious way -- `<script>document.write(...)</script>` -- the value
@@ -56,39 +60,40 @@ def build(rng, site, scale: str = "small") -> Case:
         # first is recorded. The document.write therefore goes in a value
         # that carries no script tag, which is also how it usually arrives:
         # appended to an existing inline handler.
-        victims[2].values["post_content"] += (
+        victims[2].values[body] += (
             '<div onload=\'document.write(unescape("%3Cdiv%3E"))\'></div>')
     truth.plant(Planted(
-        kind="table", ident=site.table("posts"),
+        kind="table", ident=site.table(site.content_table),
         expect_rules=["sqldb.iframe", "sqldb.script", "sqldb.document_write"],
         expect_severity="medium",
         note="a zero-sized off-site iframe, an off-site script and a "
              "document.write, appended to published posts. All MEDIUM: each "
              "of them can also be editorial, and the table says which"))
 
-    # --- injected into the options table -----------------------------------
-    # Where a real infection hides, because options are loaded on every page
-    # and nobody reads them.
+    # --- injected into the settings table -----------------------------------
+    # Where a real infection hides, because settings are loaded on every page
+    # and nobody reads them. The row SHAPE comes from the profile -- WordPress
+    # needs four columns, Joomla nine.
     injected = [
         ("shellforge_widget_cache", markers.DB_PHP_TAG, "sqldb.php_tag"),
-        ("recent_transient_a1", f"eval(base64_decode($k));", "sqldb.eval_input"),
+        ("recent_transient_a1", "eval(base64_decode($k));",
+         "sqldb.eval_input"),
         ("recent_transient_b2", markers.DB_OBFUSCATION, "sqldb.obfuscation"),
         ("theme_mod_backup", "shell_exec('uname -a')", "sqldb.cmd_call"),
         ("legacy_callback", "create_function('$a', 'return $a;')",
          "sqldb.create_function"),
     ]
-    next_id = 100
+    next_id = 30100
     for name, value, _rule in injected:
-        site.rows.append(Row(table="options", values={
-            "option_id": next_id, "option_name": name,
-            "option_value": value, "autoload": "yes"}))
+        site.rows.append(Row(table=site.config_table,
+                             values=site.config_row(next_id, name, value)))
         next_id += 1
     truth.plant(Planted(
-        kind="table", ident=site.table("options"),
+        kind="table", ident=site.table(site.config_table),
         expect_rules=[rule for _n, _v, rule in injected],
         expect_severity="high",
-        note="executable code in autoloaded options -- it runs on every page "
-             "view and survives restoring the webroot from backup. HIGH "
+        note="executable code in the settings table -- it is read on every "
+             "page view and survives restoring the webroot from backup. HIGH "
              "throughout: in a data column, obfuscation has no innocent "
              "reading, which is why it outranks the same pattern in a file"))
 
@@ -96,11 +101,12 @@ def build(rng, site, scale: str = "small") -> Case:
     # It trips `sqldb.script` too, and it is SUPPOSED to -- the rule reports,
     # the analyst decides. Nothing here can be forbidden without demanding
     # that Shellhound guess.
-    site.rows.append(Row(table="options", values={
-        "option_id": next_id, "option_name": "analytics_snippet",
-        "option_value": markers.DB_SCRIPT, "autoload": "yes"}))
+    site.rows.append(Row(
+        table=site.config_table,
+        values=site.config_row(next_id, "analytics_snippet",
+                               markers.DB_SCRIPT)))
     truth.note(
-        "`analytics_snippet` in the options table is a legitimate tracking "
+        "`analytics_snippet` in the settings table is a legitimate tracking "
         "tag and trips `sqldb.script` exactly like the injected one. That is "
         "correct behaviour, not a false positive: the rule states that "
         "JavaScript sits in a data field, and whether it belongs there is a "

@@ -105,6 +105,42 @@ THEMES = [
 # something plausible to read out of `wp-includes/version.php`.
 WP_VERSIONS = ["6.3.2", "6.4.2", "6.4.3", "6.5.2", "6.6.1"]
 
+# --- Joomla furniture -------------------------------------------------------
+# Invented extension names, except the template framework: `shaper_helix3` is
+# the real directory JoomShaper's Helix3 installs into, and a scenario about
+# CVE-2026-49049 that renamed it would be testing a path no analyst will ever
+# see. The framework is named; nothing about its code is reproduced.
+
+JOOMLA_EXTENSIONS = [
+    ("com_kontaktformular", "Kontaktformular", "component", "3.2.1"),
+    ("com_galerie", "Bildergalerie", "component", "2.7.0"),
+    ("com_termine", "Terminverwaltung", "component", "1.9.4"),
+    ("mod_aktuelles", "Aktuelles-Modul", "module", "4.1.0"),
+    ("mod_wetterbox", "Wetterbox", "module", "2.0.3"),
+    ("plg_seo_pfade", "SEO-Pfade", "plugin", "1.4.2"),
+    ("plg_sicherung", "Sicherung", "plugin", "5.0.1"),
+]
+
+#: (directory, display name, version). `shaper_helix3` is the real one.
+JOOMLA_TEMPLATES = [
+    ("shaper_helix3", "Helix3", "3.0.9"),
+    ("handwerk_j4", "Handwerk J4", "1.6.0"),
+]
+
+#: Joomla releases that actually existed. The 3.x ones write RELEASE and
+#: DEV_LEVEL into `libraries/cms/version/version.php`; the 4.x and 5.x ones
+#: write MAJOR/MINOR/PATCH_VERSION into `libraries/src/Version.php`, and
+#: Shellhound reads both, which is why the profile can emit either.
+JOOMLA_VERSIONS = ["3.9.28", "3.10.11", "4.2.7", "4.4.3", "5.1.2"]
+
+JOOMLA_PAGE_SLUGS = [
+    "/", "/index.php", "/kontakt", "/impressum", "/ueber-uns",
+    "/leistungen", "/aktuelles", "/datenschutz", "/anfahrt",
+    "/index.php?option=com_content&view=article&id=12",
+    "/index.php?option=com_content&view=category&layout=blog&id=9",
+    "/component/kontaktformular/",
+]
+
 
 def full_name(rng) -> tuple[str, str]:
     """(login, display name)."""

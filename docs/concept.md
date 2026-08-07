@@ -172,18 +172,29 @@ Oberfläche ihre `roots` zieht.
 | Ground-Truth-Modell + JSON-Emitter | fertig |
 | WordPress-Weltmodell | fertig |
 | Renderer: Webroot, Access-Log, Error-Log, SQL-Dump | fertig |
-| **Acht Szenarien** (siehe unten) | fertig |
+| Weltmodelle WordPress **und Joomla** | fertig |
+| **Zehn Szenarien**, 17 CMS-Paarungen (siehe unten) | fertig |
 | Scorer + Regelabdeckungsmatrix + `check --all` | fertig |
 | Eigene Testsuite (22 Tests) | grün |
 
-Gemessen gegen Shellhound, alle acht Szenarien, alle Seeds und Skalen:
-**Recall 100 %, Precision 100 %, Regelabdeckung 97,1 %** (33 von 34 Regeln).
-`large` sind 238.940 Logzeilen und 341 Dateien; die komplette Schleife aus
-Erzeugen, Analysieren und Bewerten läuft in 7,4 Sekunden.
+Gemessen gegen Shellhound, alle 17 Paarungen, alle Seeds und Skalen:
+**Recall 100 %, Precision 100 %, Regelabdeckung 100 %** (34 von 34 Regeln, auf
+Linux; unter Windows 97,1 %). `large` sind 238.940 Logzeilen und 341 Dateien;
+die komplette Schleife aus Erzeugen, Analysieren und Bewerten läuft in
+7,4 Sekunden.
+
+Die Trennung von Welt und Narrativ zahlt sich hier aus: sieben der zehn
+Szenarien laufen unverändert gegen beide CMS-Profile. Nur die drei
+CVE-spezifischen sind an ihr System gebunden, und die Registry **verweigert**
+eine ungültige Paarung, statt sie stillschweigend zu erzeugen — ein
+`wp-upload-shell` gegen Joomla beschriebe einen Einbruch durch ein
+WordPress-Plugin in eine Installation, die keine Plugins hat.
 
 | Szenario | Prüft |
 |---|---|
 | `wp-upload-shell` | Der Standardfall, CVE-2020-25213 |
+| `joomla-helix3` | CVE-2026-49049, RCE-Variante. **Reproduziert eine Erkennungslücke**, siehe unten |
+| `joomla-helix3-deface` | Dieselbe CVE, DB-Variante: der Webroot bleibt byteidentisch zu einer sauberen Installation |
 | `shell-kit` | Ein Toolkit im Theme — Content-Regeln allein, ohne dass die Standortregel ihre Arbeit macht |
 | `bruteforce-admin` | Kein Datei-Artefakt. Zwei Fluten: eine bekommt einen Redirect und muss HIGH werden, die andere nicht und muss MEDIUM bleiben |
 | `db-only-spam` | Webroot sauber, Code in der Datenbank |
@@ -198,7 +209,21 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
-### Drei Befunde aus dem Bau
+### Vier Befunde aus dem Bau
+
+**`up.php.json` ist für alle drei Engines unsichtbar.** Helix3 hängt `.json`
+an den Layout-Namen an, aus `../../up.php` wird also `up.php.json` im Webroot.
+Diese Datei fällt durch jedes Raster, und zwar jeweils aus einem eigenen
+Grund: `DOUBLE_EXT_RE` matcht *harmlos-dann-ausführbar* (`logo.jpg.php`), hier
+ist es umgekehrt; `.json` steht nicht in `PHP_EXTS`, die Content-Regeln öffnen
+die Datei also nie; und `_PATH_RE` im Errorlog schneidet den Pfad bei `.php`
+ab, wodurch der Fatal auf `/var/www/html/up.php` auflöst — eine Datei, die
+nicht existiert. Ausführbar ist sie trotzdem, weil `mod_mime` auf jede im
+Namen vorhandene Endung dispatcht; genau deshalb wählt der Exploit diese Form.
+Das Szenario trägt eine konventionell benannte Shell aus demselben Einbruch
+als Kontrolle mit, damit „nichts gefunden" nicht mit „die Engines liefen nie"
+verwechselt werden kann.
+
 
 **Die Doku des Error-Log-Motors widerspricht sich.** `docs/rules.md` nennt „a
 file deleted before the copy was taken" als das, wofür der Motor da ist — „the

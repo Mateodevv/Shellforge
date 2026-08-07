@@ -52,7 +52,7 @@ KIT = [
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="shell-kit",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
     start = datetime(2026, 1, 5)
     attack_day = start + timedelta(days=int(days * 0.55))
@@ -62,11 +62,11 @@ def build(rng, site, scale: str = "small") -> Case:
     case.requests = requests + common.scanner_noise(rng.derive("scanners"),
                                                     start, days)
 
-    theme_slug = site.theme[0]
     # `inc`, deliberately not `assets`: `assets` is one of the writable-upload
     # segments, and the point of this directory is that the location rule does
-    # NOT fire here.
-    kit_dir = f"wp-content/themes/{theme_slug}/inc"
+    # NOT fire here. The theme directory itself comes from the profile --
+    # `wp-content/themes/x` in WordPress, `templates/x` in Joomla.
+    kit_dir = f"{site.theme_dir}/inc"
     t0 = rng.moment(attack_day, 2, 4)
 
     for rule_id, name in KIT:

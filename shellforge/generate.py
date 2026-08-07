@@ -23,13 +23,16 @@ from pathlib import Path
 from shellforge import scenarios
 from shellforge.render import accesslog, errorlog, sqldump, webroot
 from shellforge.rng import Rng
-from shellforge.world import wordpress
+from shellforge.world import joomla, wordpress
 
-WORLDS = {"wordpress": wordpress}
+WORLDS = {"wordpress": wordpress, "joomla": joomla}
 
 
-def _slug(scenario: str, seed: int, scale: str) -> str:
-    return f"{scenario}-{scale}-{seed}"
+def _slug(scenario: str, cms: str, seed: int, scale: str) -> str:
+    # The CMS is in the name because the same scenario runs against several
+    # profiles; without it, generating both into one directory would have the
+    # second silently overwrite the first.
+    return f"{scenario}-{cms}-{scale}-{seed}"
 
 
 def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
@@ -39,10 +42,14 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
         raise KeyError(f"unknown cms {cms!r}; have: {', '.join(WORLDS)}")
 
     rng = Rng(seed)
+    # The scenario is resolved BEFORE the world is built, so an unsupported
+    # pairing fails immediately instead of after generating an installation
+    # nobody will use.
+    build_case = scenarios.get(scenario, cms)
     site = WORLDS[cms].build(rng.derive("world"), scale)
-    case = scenarios.get(scenario)(rng.derive("scenario"), site, scale)
+    case = build_case(rng.derive("scenario"), site, scale)
 
-    case_dir = Path(out) / _slug(scenario, seed, scale)
+    case_dir = Path(out) / _slug(scenario, cms, seed, scale)
     case_dir.mkdir(parents=True, exist_ok=True)
 
     # --- evidence -----------------------------------------------------------

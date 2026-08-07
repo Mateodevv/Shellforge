@@ -48,7 +48,7 @@ from shellforge.world import SCALES
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="ghost-shell",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
     start = datetime(2026, 1, 5)
     attack_day = start + timedelta(days=int(days * 0.45))

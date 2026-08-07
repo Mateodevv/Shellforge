@@ -74,10 +74,7 @@ def baseline(rng, site, start: datetime, days: int, per_day: int):
                 out.append(Request(
                     when=when + timedelta(minutes=i + 1), ip=editor_ip,
                     method=rng.weighted([("GET", 4), ("POST", 1)]),
-                    uri=rng.choice(["/wp-admin/", "/wp-admin/edit.php",
-                                    "/wp-admin/upload.php",
-                                    "/wp-admin/admin-ajax.php",
-                                    "/wp-admin/post.php"]),
+                    uri=rng.choice(site.admin_paths),
                     status=200, size=rng.randint(3000, 28000), agent=agent))
     return out, editor_ip
 
@@ -147,8 +144,9 @@ def warning_noise(rng, site, start: datetime, days: int, count=(4, 10)):
     lines, touched = [], set()
     for _ in range(rng.randint(*count)):
         day = start + timedelta(days=rng.randint(0, max(0, days - 1)))
-        slug, _name, _v = rng.choice(site.plugins)
-        rel = f"wp-content/plugins/{slug}/{slug}.php"
+        # The profile carries where its extensions live; spelling it out here
+        # would make every scenario using this helper a WordPress scenario.
+        _slug, _name, _v, rel = rng.choice(site.plugins)
         touched.add(rel)
         lines.append(ErrorLine(
             when=rng.moment(day, 6, 22), level="PHP Warning",
@@ -169,15 +167,20 @@ def plant_warnings(truth, paths):
 
 
 def plant_core_silence(truth, site):
-    """The false-positive guards every scenario shares."""
+    """The false-positive guards every scenario shares.
+
+    NAMED BY THE PROFILE, not spelled out here. `wp-includes/functions.php`
+    does not exist in a Joomla installation, and a guard that silently applies
+    to no file is worse than no guard: the assertion passes, and nobody
+    notices it stopped asserting anything.
+    """
     truth.keep_quiet(
-        "/wp-includes/functions.php",
+        site.guarded_core,
         reason="genuine core file: bootstrap guard present, nothing "
                "executable. The oldest false-positive guard there is")
-    truth.keep_quiet(
-        f"/{site.upload_dir}/.htaccess",
-        reason="the .htaccess WordPress itself writes (`Options -Indexes`)")
-    truth.keep_quiet(
-        f"/{site.upload_dir}/index.php",
-        reason="the silence-is-golden stub a CMS scatters by the thousand. "
-               "In an upload directory, and correctly booked inert")
+    for rel in site.quiet_upload_files:
+        truth.keep_quiet(
+            f"/{rel}",
+            reason="ships with the CMS and lives in the upload tree. A rule "
+                   "that reddens these cannot tell an installation from what "
+                   "was put into it")

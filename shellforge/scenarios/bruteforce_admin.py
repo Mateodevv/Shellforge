@@ -37,7 +37,7 @@ from shellforge.world import Account, SCALES
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="bruteforce-admin",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
     start = datetime(2026, 1, 5)
     attack_day = start + timedelta(days=int(days * 0.6))
@@ -61,15 +61,13 @@ def build(rng, site, scale: str = "small") -> Case:
     case.requests.append(Request(
         when=breakthrough, ip=winner, method="POST", uri=site.login_path,
         status=302, size=0, agent=common.QUIET_UA))
-    # What somebody does once they are in.
+    # What somebody does once they are in. The paths come from the profile:
+    # this is a story about logins, not about WordPress.
     for i in range(rng.randint(6, 15)):
         case.requests.append(Request(
             when=breakthrough + timedelta(minutes=1 + i * 2), ip=winner,
             method=rng.weighted([("GET", 3), ("POST", 1)]),
-            uri=rng.choice(["/wp-admin/", "/wp-admin/users.php",
-                            "/wp-admin/user-new.php",
-                            "/wp-admin/options-general.php",
-                            "/wp-admin/plugin-install.php"]),
+            uri=rng.choice(site.admin_paths),
             status=200, size=rng.randint(9000, 30000), agent=common.QUIET_UA))
     truth.plant(Planted(
         kind="client", ident=winner,
@@ -81,7 +79,7 @@ def build(rng, site, scale: str = "small") -> Case:
     truth.event(t0, winner, "bruteforce_begins", f"{tries} POSTs to "
                                                  f"{site.login_path}")
     truth.event(breakthrough, winner, "login_success",
-                "302 after the flood, then /wp-admin/user-new.php")
+                "302 after the flood, then user administration")
 
     # --- the one that did not ----------------------------------------------
     loser = rng.ip("attacker")
@@ -106,15 +104,20 @@ def build(rng, site, scale: str = "small") -> Case:
     # Registered hours after the successful login, and never signed in since.
     # Shellhound lists it under account observations, which is a sorting aid
     # and not a finding -- so nothing is planted for it.
+    # The hash SHAPE is taken from an existing account rather than invented,
+    # so a Joomla dump gets bcrypt and a WordPress dump gets phpass. A rogue
+    # account whose hash format does not match the rest of the table would be
+    # a giveaway no real attacker leaves.
+    like = site.accounts[0].password_hash if site.accounts else "$P$B"
     site.accounts.append(Account(
-        login="wp-support", display="Support",
-        email="wp-support@example.test", role="administrator",
+        login="cms-support", display="Support",
+        email="cms-support@example.test", role="administrator",
         registered=(breakthrough + timedelta(hours=2)).strftime(
             "%Y-%m-%d %H:%M:%S"),
-        password_hash="$P$B" + rng.hexs(29)))
+        password_hash=like[:7] + rng.hexs(max(0, len(like) - 7))))
     truth.note(
-        "An administrator account named `wp-support` was registered two hours "
-        "after the successful login and has never signed in. It is NOT "
+        "An administrator account named `cms-support` was registered two "
+        "hours after the successful login and has never signed in. It is NOT "
         "planted as a finding: docs/rules.md is explicit that account "
         "observations are a sorting aid, because a dump cannot say an account "
         "is malicious. What the case asserts is that the log finding and the "

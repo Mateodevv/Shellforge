@@ -20,11 +20,24 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from shellforge import markers, scenarios          # noqa: E402
-from shellforge.generate import generate           # noqa: E402
+from shellforge.generate import WORLDS, generate   # noqa: E402
 from shellforge.rng import Rng                     # noqa: E402
 from shellforge.score import score, site_path      # noqa: E402
 
 SHELLHOUND = Path(__file__).resolve().parents[2] / "shellhound"
+
+
+def pairs():
+    """Every (scenario, cms) the catalogue actually supports.
+
+    Iterating scenarios alone would silently test each one against WordPress
+    only, and the second world profile exists precisely because a different
+    account parser, version file and writable directory are where a generator
+    goes wrong."""
+    import shellforge.generate as g
+    return [(s, cms) for cms in sorted(g.WORLDS)
+            for s in scenarios.names(cms)]
+
 
 
 class SeedDeterminism(unittest.TestCase):
@@ -198,12 +211,13 @@ class MarkersAreSingleRuleProbes(unittest.TestCase):
 class EndToEnd(unittest.TestCase):
     """Generate, analyse, score. The loop the whole thing exists to close."""
 
-    def _score(self, scenario, seed=42):
+    def _score(self, scenario, seed=42, cms="wordpress"):
         from shellforge.runner import analyse
         from shellforge.score import load_truth, read_findings
 
         with tempfile.TemporaryDirectory() as tmp:
-            summary = generate(scenario=scenario, seed=seed, out=Path(tmp))
+            summary = generate(scenario=scenario, cms=cms, seed=seed,
+                               out=Path(tmp))
             case = Path(summary["case_dir"])
             analyse(case / "sh", webroot=case / "webroot",
                     logs=case / "logs", dump=case / "dump.sql",
@@ -214,9 +228,9 @@ class EndToEnd(unittest.TestCase):
     def test_every_scenario_scores_clean(self):
         if not (SHELLHOUND / "server").is_dir():
             self.skipTest(f"no Shellhound checkout at {SHELLHOUND}")
-        for scenario in scenarios.names():
-            with self.subTest(scenario=scenario):
-                result = self._score(scenario)
+        for scenario, cms in pairs():
+            with self.subTest(scenario=scenario, cms=cms):
+                result = self._score(scenario, cms=cms)
                 self.assertEqual(result.misses, [], "planted but not reported")
                 self.assertEqual(result.false_positives, [],
                                  "reported but not planted")
@@ -235,8 +249,8 @@ class EndToEnd(unittest.TestCase):
             self.skipTest(f"no Shellhound checkout at {SHELLHOUND}")
         from shellforge.score import coverage, shellhound_rule_ids
         fired = set()
-        for scenario in scenarios.names():
-            fired |= self._score(scenario).fired_rules
+        for scenario, cms in pairs():
+            fired |= self._score(scenario, cms=cms).fired_rules
         cov = coverage(fired, shellhound_rule_ids(SHELLHOUND))
         self.assertGreaterEqual(
             cov["ratio"], 0.97,
@@ -312,27 +326,41 @@ class ScenarioRegistry(unittest.TestCase):
 
     def test_every_registered_scenario_builds(self):
         self.assertIn("wp-upload-shell", scenarios.names())
-        for name in scenarios.names():
-            with self.subTest(scenario=name), \
+        for name, cms in pairs():
+            with self.subTest(scenario=name, cms=cms), \
                     tempfile.TemporaryDirectory() as tmp:
-                summary = generate(scenario=name, seed=3, out=Path(tmp))
+                summary = generate(scenario=name, cms=cms, seed=3,
+                                   out=Path(tmp))
                 self.assertGreater(summary["planted"], 0,
-                                   f"{name} plants nothing")
+                                   f"{name} plants nothing on {cms}")
+
+    def test_a_scenario_refuses_a_cms_it_does_not_support(self):
+        """Refused, not quietly run. `wp-upload-shell` against Joomla would
+        generate a case describing an intrusion through a WordPress plugin
+        into an installation that has no plugins -- evidence that could not
+        have happened is worse than no evidence."""
+        with self.assertRaises(KeyError):
+            scenarios.get("wp-upload-shell", "joomla")
+        with self.assertRaises(KeyError):
+            scenarios.get("joomla-helix3", "wordpress")
+        self.assertNotIn("wp-upload-shell", scenarios.names("joomla"))
+        self.assertIn("bruteforce-admin", scenarios.names("joomla"))
+        self.assertIn("bruteforce-admin", scenarios.names("wordpress"))
 
     def test_no_two_scenarios_produce_the_same_case(self):
         """A scenario whose narrative silently stopped running would still
         generate a valid case -- the world builds either way. Identical
         digests are what that failure looks like from outside."""
         seen = {}
-        for name in scenarios.names():
+        for name, cms in pairs():
             with tempfile.TemporaryDirectory() as tmp:
-                digest = generate(scenario=name, seed=3,
+                digest = generate(scenario=name, cms=cms, seed=3,
                                   out=Path(tmp))["digest"]
             clash = seen.get(digest)
             self.assertIsNone(
-                clash, f"{name} and {clash} produced byte-identical evidence; "
-                       f"one of them is not doing anything")
-            seen[digest] = name
+                clash, f"{name}[{cms}] and {clash} produced byte-identical "
+                       f"evidence; one of them is not doing anything")
+            seen[digest] = f"{name}[{cms}]"
 
 
 if __name__ == "__main__":

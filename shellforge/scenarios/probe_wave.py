@@ -30,27 +30,52 @@ from shellforge.truth import GroundTruth, Planted
 from shellforge.world import SCALES
 
 #: Injection probes. Each carries one of the patterns Shellhound looks for.
+#: `/index.php` throughout, because every CMS in this repository routes
+#: through it -- a probe list naming `wp-config.php` would quietly become a
+#: WordPress scenario, and the rule matches on the pattern in the query
+#: string, not on the file being probed.
 SQLI = [
-    "/shop/index.php?id=1'+UNION+SELECT+1,2,3--",
-    "/shop/index.php?id=1+AND+1=1+UNION+SELECT+table_name+FROM+information_schema.tables--",
+    "/index.php?id=1'+UNION+SELECT+1,2,3--",
+    "/index.php?id=1+AND+1=1+UNION+SELECT+table_name+FROM+information_schema.tables--",
     "/index.php?p=9'+or+1=1--+-",
-    "/shop/artikel.php?id=1+AND+sleep(5)--",
-    "/shop/artikel.php?id=1+UNION+SELECT+concat(user_login,0x3a,user_pass)+FROM+wp_users--",
+    "/index.php?id=1+AND+sleep(5)--",
+    "/index.php?id=1+UNION+SELECT+concat(0x3a,0x3a)--",
     "/index.php?cat=1+AND+benchmark(2000000,md5(now()))--",
 ]
 
 #: Traversal probes. The rule wants at least two `../`, in any encoding.
 TRAVERSAL = [
     "/index.php?f=../../../../etc/passwd",
-    "/download.php?file=..%2f..%2f..%2fwp-config.php",
     "/index.php?tpl=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fshadow",
-    "/wp-content/plugins/bildergalerie-lite/dl.php?img=../../../../wp-config.php",
+    "/index.php?view=..%2f..%2f..%2fconfiguration",
 ]
 
 
-def _wave(rng, ip, when, agent, status, size_for):
+def _cms_probes(site):
+    """Probes that name something only this installation has.
+
+    A wave made only of generic `/index.php?id=` lines would never test that
+    the rules survive a real path, and a real path is where an analyst
+    recognises the case.
+
+    NOTHING HERE MAY LOOK LIKE PHP IN AN UPLOAD DIRECTORY. The first attempt
+    used `/{upload_dir}/../../index.php?f=...`, which contains an upload
+    segment and ends in `.php` -- so `logs.upload_php` fired and promoted the
+    actor to HIGH, and the scenario's own claim (traversal stays MEDIUM)
+    failed against a rule that was behaving correctly. The upload directory
+    is named in the QUERY STRING instead, where it is a traversal target
+    rather than a request for something inside it.
+    """
+    return [
+        f"/index.php?f=../../../../{site.upload_dir}/../configuration",
+        f"/index.php?tpl=..%2f..%2f{site.upload_dir}%2f..%2findex",
+    ]
+
+
+def _wave(rng, site, ip, when, agent, status, size_for):
     out = []
-    for i, uri in enumerate(rng.shuffled(SQLI + TRAVERSAL)):
+    for i, uri in enumerate(rng.shuffled(SQLI + TRAVERSAL
+                                         + _cms_probes(site))):
         out.append(Request(when=when + timedelta(seconds=i * rng.randint(3, 40)),
                            ip=ip, method="GET", uri=uri, status=status,
                            size=size_for(uri), agent=agent))
@@ -61,7 +86,7 @@ def _wave(rng, ip, when, agent, status, size_for):
 def build(rng, site, scale: str = "small") -> Case:
     _p, _m, _po, days, per_day = SCALES[scale]
     truth = GroundTruth(seed=rng.seed, scenario="probe-wave",
-                        cms="wordpress", cms_version=site.version)
+                        cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
     start = datetime(2026, 1, 5)
     day = start + timedelta(days=int(days * 0.5))
@@ -74,8 +99,9 @@ def build(rng, site, scale: str = "small") -> Case:
     # --- answered ----------------------------------------------------------
     through = rng.ip("attacker")
     t0 = rng.moment(day, 4, 6)
-    case.requests += _wave(rng.derive("through"), through, t0, common.QUIET_UA,
-                           200, lambda u: rng.randint(2400, 38000))
+    case.requests += _wave(rng.derive("through"), site, through, t0,
+                           common.QUIET_UA, 200,
+                           lambda u: rng.randint(2400, 38000))
     truth.plant(Planted(
         kind="client", ident=through,
         expect_rules=["logs.sqli", "logs.traversal"],
@@ -89,7 +115,7 @@ def build(rng, site, scale: str = "small") -> Case:
     # --- repelled ----------------------------------------------------------
     blocked = rng.ip("attacker")
     t1 = rng.moment(day + timedelta(days=1), 4, 6)
-    case.requests += _wave(rng.derive("blocked"), blocked, t1,
+    case.requests += _wave(rng.derive("blocked"), site, blocked, t1,
                            common.QUIET_UA, 404, lambda u: 1180)
     truth.keep_quiet(
         blocked,
@@ -105,13 +131,13 @@ def build(rng, site, scale: str = "small") -> Case:
     # The URI says a query ran; only the dump can say what it did. Put both in
     # so the two halves of the case can be compared, which is the whole reason
     # the log rule is MEDIUM rather than HIGH.
-    posts = [r for r in site.rows if r.table == "posts"]
+    posts = [r for r in site.rows if r.table == site.content_table]
     if posts:
-        posts[0].values["post_content"] += (
+        posts[0].values[site.content_column] += (
             '<iframe src="//zaehler.example.test/t.js" width="0" '
             'height="0"></iframe>')
         truth.plant(Planted(
-            kind="table", ident=site.table("posts"),
+            kind="table", ident=site.table(site.content_table),
             expect_rules=["sqldb.iframe"], expect_severity="medium",
             note="what the answered injection actually accomplished. The log "
                  "says a query was answered; this says what came of it. "

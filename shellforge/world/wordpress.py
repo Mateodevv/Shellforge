@@ -21,7 +21,112 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from shellforge import corpus, markers
-from shellforge.world import Account, Row, Site, SCALES
+from shellforge.world import Account, Row, Site, Table, SCALES
+
+# --- schema -----------------------------------------------------------------
+# THE REAL COLUMN ORDERS. Shellhound reads WordPress accounts by POSITION
+# (`row[1]` login, `row[2]` hash, `row[4]` e-mail, `row[6]` registered), so
+# these lists are not a stylistic choice. Do not sort them.
+
+SCHEMA = {
+    "users": Table(
+        suffix="users",
+        columns=["ID", "user_login", "user_pass", "user_nicename",
+                 "user_email", "user_url", "user_registered",
+                 "user_activation_key", "user_status", "display_name"],
+        ddl="""CREATE TABLE `{t}` (
+  `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_login` varchar(60) NOT NULL DEFAULT '',
+  `user_pass` varchar(255) NOT NULL DEFAULT '',
+  `user_nicename` varchar(50) NOT NULL DEFAULT '',
+  `user_email` varchar(100) NOT NULL DEFAULT '',
+  `user_url` varchar(100) NOT NULL DEFAULT '',
+  `user_registered` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `user_activation_key` varchar(255) NOT NULL DEFAULT '',
+  `user_status` int(11) NOT NULL DEFAULT '0',
+  `display_name` varchar(250) NOT NULL DEFAULT '',
+  PRIMARY KEY (`ID`),
+  KEY `user_login_key` (`user_login`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"""),
+    "usermeta": Table(
+        suffix="usermeta",
+        columns=["umeta_id", "user_id", "meta_key", "meta_value"],
+        ddl="""CREATE TABLE `{t}` (
+  `umeta_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `meta_key` varchar(255) DEFAULT NULL,
+  `meta_value` longtext,
+  PRIMARY KEY (`umeta_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"""),
+    "posts": Table(
+        suffix="posts",
+        columns=["ID", "post_author", "post_date", "post_content",
+                 "post_title", "post_status", "post_name", "post_type"],
+        ddl="""CREATE TABLE `{t}` (
+  `ID` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `post_author` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `post_date` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_content` longtext NOT NULL,
+  `post_title` text NOT NULL,
+  `post_status` varchar(20) NOT NULL DEFAULT 'publish',
+  `post_name` varchar(200) NOT NULL DEFAULT '',
+  `post_type` varchar(20) NOT NULL DEFAULT 'post',
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"""),
+    "options": Table(
+        suffix="options",
+        columns=["option_id", "option_name", "option_value", "autoload"],
+        ddl="""CREATE TABLE `{t}` (
+  `option_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `option_name` varchar(191) NOT NULL DEFAULT '',
+  `option_value` longtext NOT NULL,
+  `autoload` varchar(20) NOT NULL DEFAULT 'yes',
+  PRIMARY KEY (`option_id`),
+  UNIQUE KEY `option_name` (`option_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"""),
+}
+
+#: WordPress stores the role as a serialized PHP array in usermeta. Shellhound
+#: reads it to decide who is an administrator, so the serialization has to be
+#: right down to the string lengths.
+ROLE_META = {
+    "administrator": 'a:1:{s:13:"administrator";b:1;}',
+    "editor": 'a:1:{s:6:"editor";b:1;}',
+    "author": 'a:1:{s:6:"author";b:1;}',
+    "subscriber": 'a:1:{s:10:"subscriber";b:1;}',
+}
+
+
+def config_row(index: int, name: str, value: str) -> dict:
+    """A settings row. WordPress autoloads options, so anything in here runs
+    on every page view -- which is what makes the table worth infecting."""
+    return {"option_id": index, "option_name": name,
+            "option_value": value, "autoload": "yes"}
+
+
+def account_rows(site) -> dict:
+    """Accounts as WordPress stores them: the row, plus a capabilities meta."""
+    users, usermeta = [], []
+    for index, account in enumerate(site.accounts, start=1):
+        users.append({
+            "ID": index,
+            "user_login": account.login,
+            "user_pass": account.password_hash,
+            "user_nicename": account.login.replace(".", "-"),
+            "user_email": account.email,
+            "user_url": "",
+            "user_registered": account.registered,
+            "user_activation_key": "",
+            "user_status": 0,
+            "display_name": account.display,
+        })
+        usermeta.append({
+            "umeta_id": index, "user_id": index,
+            "meta_key": "wp_capabilities",
+            "meta_value": ROLE_META.get(account.role,
+                                        ROLE_META["subscriber"]),
+        })
+    return {"users": users, "usermeta": usermeta}
 
 # A minimal but genuine PNG: 1x1, transparent. Uploaded media has to be real
 # enough that an image check does not reject it -- that is the whole point of
@@ -104,10 +209,23 @@ def build(rng, scale: str = "small") -> Site:
     extra_parts, media_count, post_count, _days, _rpd = SCALES[scale]
 
     version = rng.choice(corpus.WP_VERSIONS)
-    site = Site(kind="wordpress", version=version,
-                upload_dir="wp-content/uploads",
-                login_path="/wp-login.php",
-                prefix=rng.weighted([("wp_", 6), ("wp7x_", 2), ("wpsite_", 1)]))
+    site = Site(
+        kind="wordpress", version=version,
+        upload_dir="wp-content/uploads",
+        login_path="/wp-login.php",
+        admin_paths=["/wp-admin/", "/wp-admin/edit.php",
+                     "/wp-admin/upload.php", "/wp-admin/admin-ajax.php",
+                     "/wp-admin/post.php", "/wp-admin/users.php",
+                     "/wp-admin/user-new.php", "/wp-admin/plugin-install.php",
+                     "/wp-admin/options-general.php"],
+        guarded_core="/wp-includes/functions.php",
+        quiet_upload_files=["wp-content/uploads/.htaccess",
+                            "wp-content/uploads/index.php"],
+        content_table="posts", config_table="options",
+        content_column="post_content",
+        schema=SCHEMA, account_rows=account_rows,
+        config_row=config_row,
+        prefix=rng.weighted([("wp_", 6), ("wp7x_", 2), ("wpsite_", 1)]))
 
     # --- core -------------------------------------------------------------
     site.add("index.php",
@@ -142,7 +260,6 @@ def build(rng, scale: str = "small") -> Site:
 
     # --- plugins ------------------------------------------------------------
     chosen = rng.sample(corpus.PLUGINS, rng.randint(4, 6))
-    site.plugins = []
     for slug, name, ver in chosen:
         site.add(f"wp-content/plugins/{slug}/{slug}.php",
                  _plugin_main(slug, name, ver))
@@ -153,11 +270,13 @@ def build(rng, scale: str = "small") -> Site:
                                 "settings", "helpers"], extra_parts):
             site.add(f"wp-content/plugins/{slug}/includes/{part}.php",
                      _plugin_part(slug, part))
-        site.plugins.append((slug, name, ver))
+        site.plugins.append(
+            (slug, name, ver, f"wp-content/plugins/{slug}/{slug}.php"))
 
     # --- theme --------------------------------------------------------------
     theme_slug, theme_name, theme_ver = rng.choice(corpus.THEMES)
     site.theme = (theme_slug, theme_name, theme_ver)
+    site.theme_dir = f"wp-content/themes/{theme_slug}"
     site.add(f"wp-content/themes/{theme_slug}/style.css",
              _theme_style(theme_name, theme_ver))
     for part in ("index", "header", "footer", "functions", "single", "page",

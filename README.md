@@ -21,18 +21,22 @@ python -m shellforge check --all --shellhound ../shellhound
 ```
 
 ```
-scenario               recall  precision  rules   result
-------------------------------------------------------------
-bruteforce-admin      100.0%     100.0%      3   ok
-clean-baseline        100.0%     100.0%      1   ok
-db-only-spam          100.0%     100.0%      9   ok
-false-guard           100.0%     100.0%      4   ok
-ghost-shell           100.0%     100.0%      6   ok
-probe-wave            100.0%     100.0%      4   ok
-shell-kit             100.0%     100.0%     13   ok
-wp-upload-shell       100.0%     100.0%     12   ok
+scenario                 cms          recall  precision  rules   result
+------------------------------------------------------------------------
+bruteforce-admin         joomla      100.0%     100.0%      3   ok
+clean-baseline           joomla      100.0%     100.0%      1   ok
+db-only-spam             joomla      100.0%     100.0%      9   ok
+false-guard              joomla      100.0%     100.0%      4   ok
+ghost-shell              joomla      100.0%     100.0%      6   ok
+joomla-helix3            joomla      100.0%     100.0%      6   ok
+joomla-helix3-deface     joomla      100.0%     100.0%      3   ok
+probe-wave               joomla      100.0%     100.0%      4   ok
+shell-kit                joomla      100.0%     100.0%     13   ok
+bruteforce-admin         wordpress   100.0%     100.0%      3   ok
+...
+wp-upload-shell          wordpress   100.0%     100.0%     12   ok
 
-COMBINED COVERAGE  97.1%  (33/34 rules exercised by the catalogue)
+COMBINED COVERAGE  100.0%  (34/34 rules exercised by the catalogue)
 
 PASS
 ```
@@ -156,18 +160,44 @@ forgotten.
 
 ## Scenarios
 
-Eight, together exercising 33 of Shellhound's 34 rules.
+Ten scenarios across two CMS profiles — 17 valid pairings, together
+exercising all 34 of Shellhound's rules.
 
-| Scenario | What it is for |
-|---|---|
-| `wp-upload-shell` | The standard case, modelled on CVE-2020-25213 |
-| `shell-kit` | A whole toolkit in the theme directory — the content rules on their own, without the location rule doing their work |
-| `bruteforce-admin` | No file artifact at all. Two floods: one gets a redirect and must go HIGH, one does not and must stay MEDIUM |
-| `db-only-spam` | Webroot clean, code in the database — the case that survives restoring from backup |
-| `probe-wave` | Identical SQLi and traversal payloads, one address answered 200 and one answered 404. Outcome gating, both halves |
-| `false-guard` | A forged `ABSPATH` in a comment. The documented limitation, pinned from both sides |
-| `ghost-shell` | Shell deleted before the copy was taken. **Reproduces a discrepancy** — see below |
-| `clean-baseline` | A working site where nothing happened. Expectation: INFO about the scanners and nothing else |
+| Scenario | CMS | What it is for |
+|---|---|---|
+| `wp-upload-shell` | WordPress | The standard case, modelled on CVE-2020-25213 |
+| `joomla-helix3` | Joomla | CVE-2026-49049, RCE variant. **Reproduces a detection gap** — see below |
+| `joomla-helix3-deface` | Joomla | The same CVE, database variant: the webroot stays byte-identical to a clean install |
+| `shell-kit` | both | A whole toolkit in the theme directory — the content rules on their own, without the location rule doing their work |
+| `bruteforce-admin` | both | No file artifact at all. Two floods: one gets a redirect and must go HIGH, one does not and must stay MEDIUM |
+| `db-only-spam` | both | Webroot clean, code in the database — the case that survives restoring from backup |
+| `probe-wave` | both | Identical SQLi and traversal payloads, one address answered 200 and one answered 404. Outcome gating, both halves |
+| `false-guard` | both | A forged guard string in a comment. The documented limitation, pinned from both sides |
+| `ghost-shell` | both | Shell deleted before the copy was taken. **Reproduces a discrepancy** — see below |
+| `clean-baseline` | both | A working site where nothing happened. Expectation: INFO about the scanners and nothing else |
+
+Most scenarios name no CMS at all, and that is the point of separating world
+from narrative: `bruteforce-admin` is a story about logins, not about
+WordPress. A scenario that names one is doing so deliberately —
+`wp-upload-shell` models a specific WordPress plugin's CVE, and running it
+against Joomla would produce a case that could not have happened, so the
+registry refuses the pairing rather than generating it.
+
+## World profiles
+
+| | WordPress | Joomla |
+|---|---|---|
+| Version read from | `wp-includes/version.php` | `libraries/src/Version.php` (4/5) or `libraries/cms/version/version.php` (3) |
+| Accounts | `wp_users`, by column position | `#__users`, by column position |
+| Who is an administrator | serialized role in `wp_usermeta` | `#__user_usergroup_map`, group **8** |
+| Uploads land in | `wp-content/uploads` | `images` |
+| Guard string | `ABSPATH` / `WPINC` | `_JEXEC` |
+
+Joomla is the second profile rather than Drupal because Shellhound parses
+WordPress and Joomla *in detail* and merely recognises the rest — so Joomla is
+the only other CMS where a generated case can be wrong in an interesting way
+(wrong column order, wrong version file, wrong group id) instead of falling
+through to the generic path where almost anything parses.
 
 Run them all, with coverage summed over the catalogue:
 
@@ -196,6 +226,26 @@ is `webshell.unreadable`, which needs a genuine filesystem read error:
 `chmod 000` on POSIX, and nothing a generator can rely on under Windows. The
 scenario plants it on POSIX and writes a note into the ground truth on
 Windows rather than quietly claiming coverage the platform does not have.
+
+### joomla-helix3 reproduces a detection gap
+
+Helix3 appends `.json` to the layout name it writes, so the traversal
+`../../up.php` lands in the webroot as **`up.php.json`**. That file is
+invisible to all three engines at once, and each for its own reason:
+
+| Engine | Why it says nothing |
+|---|---|
+| `webshell.double_ext` | `DOUBLE_EXT_RE` matches *harmless-then-executable* (`logo.jpg.php`). This name is the other way round |
+| content rules | `.json` is not in `PHP_EXTS`, so the file is never opened for scanning |
+| `errorlog.hard` | `_PATH_RE` stops the captured path at `.php`, so the fatal resolves to `/var/www/html/up.php` — which does not exist |
+
+The file is nonetheless executable: Apache's `mod_mime` dispatches on any
+extension present in the name, which is precisely why the exploit writes it in
+that shape.
+
+The scenario carries a conventionally-named shell from the same intrusion as a
+**control**, so "nothing was found" cannot be confused with "the engines never
+ran" — that one is found normally.
 
 ### ghost-shell reproduces a discrepancy in Shellhound
 

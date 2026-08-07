@@ -48,12 +48,26 @@ class Case:
     unreadable_paths: list = field(default_factory=list)
 
 
+#: name -> (builder, supported CMS kinds)
 REGISTRY = {}
 
+#: The default. A scenario that names no CMS is claiming to be a story rather
+#: than a WordPress story, and every field it needs is on `Site`.
+ALL_CMS = ("wordpress", "joomla")
 
-def register(name):
+
+def register(name, cms=ALL_CMS):
+    """Register a scenario, and say which world profiles it runs against.
+
+    MOST SCENARIOS SHOULD NAME NONE. `bruteforce-admin` is a story about
+    logins; `db-only-spam` is a story about injected content. Restricting one
+    to a single CMS is a decision to make deliberately -- `wp-upload-shell` is
+    restricted because it models a specific WordPress plugin's CVE, and
+    running it against Joomla would produce a case that could not have
+    happened.
+    """
     def wrap(fn):
-        REGISTRY[name] = fn
+        REGISTRY[name] = (fn, tuple(cms))
         return fn
     return wrap
 
@@ -63,8 +77,8 @@ def register(name):
 #: loudly at a named line, not disappear from the catalogue and take its
 #: assertions with it. A silently missing scenario is a silently missing test.
 _MODULES = (
-    "wp_upload_shell", "bruteforce_admin", "db_only_spam", "shell_kit",
-    "probe_wave", "ghost_shell", "false_guard", "clean_baseline",
+    "wp_upload_shell", "joomla_helix3", "bruteforce_admin", "db_only_spam",
+    "shell_kit", "probe_wave", "ghost_shell", "false_guard", "clean_baseline",
 )
 
 
@@ -74,14 +88,30 @@ def _load():
         importlib.import_module(f"shellforge.scenarios.{module}")
 
 
-def get(name):
+def get(name, cms: str = ""):
     _load()
     if name not in REGISTRY:
         raise KeyError(f"unknown scenario {name!r}; have: "
                        f"{', '.join(sorted(REGISTRY))}")
-    return REGISTRY[name]
+    fn, supported = REGISTRY[name]
+    if cms and cms not in supported:
+        # Refused rather than run anyway. `wp-upload-shell` against Joomla
+        # would happily generate a case -- the world builds either way -- and
+        # it would describe an intrusion through a WordPress plugin into an
+        # installation that has no plugins. Evidence that could not have
+        # happened is worse than no evidence.
+        raise KeyError(
+            f"scenario {name!r} does not support cms {cms!r}; "
+            f"it supports: {', '.join(supported)}")
+    return fn
 
 
-def names():
+def names(cms: str = ""):
     _load()
-    return sorted(REGISTRY)
+    return sorted(n for n, (_fn, supported) in REGISTRY.items()
+                  if not cms or cms in supported)
+
+
+def supported_cms(name: str):
+    _load()
+    return REGISTRY[name][1]
