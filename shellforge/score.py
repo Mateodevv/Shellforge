@@ -130,9 +130,14 @@ def score(truth: dict, findings: list) -> Result:
             # Severity is only checked once the rules are right; a severity
             # complaint about a rule that never fired is noise on top of the
             # real failure.
+            #
+            # AND ONLY WHEN SOMETHING WAS EXPECTED AT ALL. A plant with an
+            # empty `expect_rules` asserts silence -- see the ghost-shell
+            # scenario -- and silence has no severity. Comparing against one
+            # turned a deliberate assertion into "expected high, got 99".
             want = NAME_SEVERITY.get(planted.get("expect_severity", "high"))
             worst = min((f["severity"] for f in got), default=99)
-            if want is not None and worst != want:
+            if expected and want is not None and worst != want:
                 result.wrong_severity.append({
                     "ident": ident,
                     "expected": SEVERITY_NAME.get(want),

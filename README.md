@@ -17,18 +17,22 @@ product. The evidence is only what it talks about.
 | **Payloads** | Inert markers in the spirit of an EICAR file. Never working code |
 
 ```bash
-python -m shellforge check --shellhound ../shellhound
+python -m shellforge check --all --shellhound ../shellhound
 ```
 
 ```
-generated  wp-upload-shell-small-42  (95 files, 884 log lines)
-analysed   95 files | 884 log lines indexed
+scenario               recall  precision  rules   result
+------------------------------------------------------------
+bruteforce-admin      100.0%     100.0%      3   ok
+clean-baseline        100.0%     100.0%      1   ok
+db-only-spam          100.0%     100.0%      9   ok
+false-guard           100.0%     100.0%      4   ok
+ghost-shell           100.0%     100.0%      6   ok
+probe-wave            100.0%     100.0%      4   ok
+shell-kit             100.0%     100.0%     13   ok
+wp-upload-shell       100.0%     100.0%     12   ok
 
-SHELLFORGE SCORE -- wp-upload-shell | seed 42
-
-  recall     100.0%   (16/16 planted objects fully found)
-  precision  100.0%   (0 findings about nothing planted)
-  coverage    35.3%   (12/34 rules exercised by this case)
+COMBINED COVERAGE  97.1%  (33/34 rules exercised by the catalogue)
 
 PASS
 ```
@@ -81,6 +85,7 @@ Or run it out of the directory with `python -m shellforge`.
 shellforge gen    --scenario wp-upload-shell --seed 42 --scale medium
 shellforge score  --truth <case>/ground_truth.json --case <case.db>
 shellforge check  --shellhound ../shellhound          # generate + analyse + score
+shellforge check  --all --shellhound ../shellhound    # every scenario, combined coverage
 shellforge scenarios
 ```
 
@@ -151,16 +156,64 @@ forgotten.
 
 ## Scenarios
 
-| Scenario | What it is for | Status |
-|---|---|---|
-| `wp-upload-shell` | The standard case, modelled on CVE-2020-25213 | **done** |
-| `bruteforce-admin` | No file artifact at all — log and database only | planned |
-| `db-only-spam` | Injected content, webroot clean | planned |
-| `ghost-shell` | Shell deleted before the copy; only the error log remembers | planned |
-| `false-guard` | Forged `_JEXEC` — the documented limitation, as a test | planned |
-| `clean-baseline` | Expectation: **zero** findings | planned |
-| `noisy-but-clean` | Legitimate `shell_exec`, tracking scripts, scanner floods | planned |
-| `multi-wave` | Two attackers, overlapping windows | planned |
+Eight, together exercising 33 of Shellhound's 34 rules.
+
+| Scenario | What it is for |
+|---|---|
+| `wp-upload-shell` | The standard case, modelled on CVE-2020-25213 |
+| `shell-kit` | A whole toolkit in the theme directory — the content rules on their own, without the location rule doing their work |
+| `bruteforce-admin` | No file artifact at all. Two floods: one gets a redirect and must go HIGH, one does not and must stay MEDIUM |
+| `db-only-spam` | Webroot clean, code in the database — the case that survives restoring from backup |
+| `probe-wave` | Identical SQLi and traversal payloads, one address answered 200 and one answered 404. Outcome gating, both halves |
+| `false-guard` | A forged `ABSPATH` in a comment. The documented limitation, pinned from both sides |
+| `ghost-shell` | Shell deleted before the copy was taken. **Reproduces a discrepancy** — see below |
+| `clean-baseline` | A working site where nothing happened. Expectation: INFO about the scanners and nothing else |
+
+Run them all, with coverage summed over the catalogue:
+
+```bash
+python -m shellforge check --all --shellhound ../shellhound
+```
+
+```
+scenario               recall  precision  rules   result
+------------------------------------------------------------
+bruteforce-admin      100.0%     100.0%      3   ok
+clean-baseline        100.0%     100.0%      1   ok
+db-only-spam          100.0%     100.0%      9   ok
+false-guard           100.0%     100.0%      4   ok
+ghost-shell           100.0%     100.0%      6   ok
+probe-wave            100.0%     100.0%      4   ok
+shell-kit             100.0%     100.0%     13   ok
+wp-upload-shell       100.0%     100.0%     12   ok
+
+COMBINED COVERAGE  97.1%  (33/34 rules exercised by the catalogue)
+```
+
+Coverage is only meaningful in aggregate. Per case it says what one narrative
+happened to touch, which is not a fact about the rule set. The one rule left
+is `webshell.unreadable`, which needs a genuine filesystem read error:
+`chmod 000` on POSIX, and nothing a generator can rely on under Windows. The
+scenario plants it on POSIX and writes a note into the ground truth on
+Windows rather than quietly claiming coverage the platform does not have.
+
+### ghost-shell reproduces a discrepancy in Shellhound
+
+`docs/rules.md` says the error-log engine catches "a file deleted before the
+copy was taken", and that "for that last one the log is the only remaining
+evidence that the path existed at all". Six lines later it says "a path is
+only written when it resolves to a file under a registered webroot".
+
+Both cannot hold. `errorlog._resolver()` requires `os.path.isfile()`, so a
+fatal naming a deleted file is counted under `unresolved` and produces no
+finding — measured, not inferred.
+
+The scenario encodes **what happens**, not what is documented: the ghost is
+planted with no expected rules, alongside a control shell that *is* present,
+so "no finding" cannot be confused with "the engine never ran". If Shellhound
+is changed, the finding appears and the scorer reports it under EXTRA — which
+is informational, so a fix does not turn the build red but does not go
+unnoticed either.
 
 ### wp-upload-shell
 

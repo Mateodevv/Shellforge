@@ -56,6 +56,23 @@ VAR_FUNC = "<?php\n$f = 'strlen';\n$f($_POST['v']);\n"
 CHR_CONCAT = ("<?php\n$s = chr(115).chr(121).chr(115).chr(116)"
               ".chr(101).chr(109);\n")
 
+#: `webshell.create_function` (HIGH). Removed in PHP 8; present in a file
+#: today it is either very old code or a kit that predates the removal.
+CREATE_FUNCTION = "<?php\n$f = create_function('$a', 'return $a;');\n"
+
+#: `webshell.preg_e` (HIGH). The `/e` modifier made preg_replace evaluate its
+#: replacement as PHP and was removed in PHP 7.
+PREG_E = "<?php\n$out = preg_replace('/x/e', $repl, $subject);\n"
+
+#: `webshell.goto` (MEDIUM). Legal PHP that almost nobody writes by hand;
+#: automatic obfuscators emit it to make control flow unreadable.
+GOTO = "<?php\ngoto lbl_7;\nlbl_7:\necho 4;\n"
+
+#: `webshell.hex_octal` (MEDIUM). Ten escapes is the threshold; fourteen here
+#: so a change to the counting does not silently drop below it.
+HEX_OCTAL = ("<?php\n$s = \"\\x68\\x74\\x74\\x70\\x73\\x3a\\x2f\\x2f"
+             "\\x65\\x78\\x61\\x6d\\x70\\x6c\";\n")
+
 #: `webshell.standalone_exec` (MEDIUM) and nothing else -- no request
 #: reference. This is what a legitimate admin tool looks like to the scanner,
 #: which is why the scenario plants it as an ACCEPTED medium rather than as a
@@ -120,6 +137,10 @@ def php_marker(rule_id: str) -> str:
         "webshell.eval_input": EVAL_INPUT,
         "webshell.var_func": VAR_FUNC,
         "webshell.chr_concat": CHR_CONCAT,
+        "webshell.create_function": CREATE_FUNCTION,
+        "webshell.preg_e": PREG_E,
+        "webshell.goto": GOTO,
+        "webshell.hex_octal": HEX_OCTAL,
         "webshell.standalone_exec": STANDALONE_EXEC,
         "webshell.double_ext": INERT_BODY,
     }

@@ -172,20 +172,46 @@ Oberfläche ihre `roots` zieht.
 | Ground-Truth-Modell + JSON-Emitter | fertig |
 | WordPress-Weltmodell | fertig |
 | Renderer: Webroot, Access-Log, Error-Log, SQL-Dump | fertig |
-| Szenario `wp-upload-shell` (CVE-2020-25213) | fertig |
-| Scorer + Regelabdeckungsmatrix | fertig |
-| Eigene Testsuite (20 Tests) | grün |
+| **Acht Szenarien** (siehe unten) | fertig |
+| Scorer + Regelabdeckungsmatrix + `check --all` | fertig |
+| Eigene Testsuite (22 Tests) | grün |
 
-Gemessen gegen Shellhound, alle Seeds und Skalen: **Recall 100 %,
-Precision 100 %, Regelabdeckung 35,3 %** (12 von 34 Regeln). `large` sind
-238.940 Logzeilen und 341 Dateien; die komplette Schleife aus Erzeugen,
-Analysieren und Bewerten läuft in 7,4 Sekunden.
+Gemessen gegen Shellhound, alle acht Szenarien, alle Seeds und Skalen:
+**Recall 100 %, Precision 100 %, Regelabdeckung 97,1 %** (33 von 34 Regeln).
+`large` sind 238.940 Logzeilen und 341 Dateien; die komplette Schleife aus
+Erzeugen, Analysieren und Bewerten läuft in 7,4 Sekunden.
 
-Die 22 nicht abgedeckten Regeln sind kein Fehler, sondern die Arbeitsliste:
-sie benennen exakt die Szenarien, die noch fehlen (Bruteforce, DB-only,
-Ghost-Shell, die restlichen `sqldb.*`- und `webshell.*`-Marker).
+| Szenario | Prüft |
+|---|---|
+| `wp-upload-shell` | Der Standardfall, CVE-2020-25213 |
+| `shell-kit` | Ein Toolkit im Theme — Content-Regeln allein, ohne dass die Standortregel ihre Arbeit macht |
+| `bruteforce-admin` | Kein Datei-Artefakt. Zwei Fluten: eine bekommt einen Redirect und muss HIGH werden, die andere nicht und muss MEDIUM bleiben |
+| `db-only-spam` | Webroot sauber, Code in der Datenbank |
+| `probe-wave` | Identische SQLi- und Traversal-Payloads, einmal mit 200 und einmal mit 404 beantwortet |
+| `false-guard` | Gefälschtes `ABSPATH` im Kommentar — die dokumentierte Limitation, von beiden Seiten festgenagelt |
+| `ghost-shell` | Vor der Kopie gelöschte Shell. **Reproduziert eine Diskrepanz**, siehe unten |
+| `clean-baseline` | Nichts ist passiert. Erwartung: INFO über die Scanner, sonst nichts |
 
-### Zwei Befunde aus dem Bau
+Die letzte Regel, `webshell.unreadable`, braucht einen echten Lesefehler:
+`chmod 000` unter POSIX, und unter Windows gibt es nichts, worauf sich ein
+Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
+unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
+behaupten, die die Plattform nicht hat.
+
+### Drei Befunde aus dem Bau
+
+**Die Doku des Error-Log-Motors widerspricht sich.** `docs/rules.md` nennt „a
+file deleted before the copy was taken" als das, wofür der Motor da ist — „the
+log is the only remaining evidence that the path existed at all" — und sechs
+Zeilen später: „a path is only written when it resolves to a file under a
+registered webroot". Beides zusammen geht nicht. `errorlog._resolver()`
+verlangt `os.path.isfile()`, also wird ein Fatal auf eine gelöschte Datei
+unter `unresolved` gezählt und erzeugt kein Finding. Gemessen, nicht
+gefolgert: `{'findings': 0, 'unresolved': 1}`. Das Szenario `ghost-shell`
+kodiert das tatsächliche Verhalten und trägt eine Kontroll-Shell mit, die
+vorhanden ist — sonst wäre „kein Finding" nicht von „der Job lief nie" zu
+unterscheiden. Ob Code oder Doku falsch ist, entscheidet dieses Repo nicht.
+
 
 **Der Error-Log-Resolver matcht per Tail.** Ein Pfad `/var/www/html/…` aus dem
 Log wird gegen den registrierten Webroot aufgelöst, indem sukzessive vordere

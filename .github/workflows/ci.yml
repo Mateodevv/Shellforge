@@ -80,12 +80,23 @@ jobs:
           python-version: '3.13'
       - name: SHELLHOUND dependencies
         run: pip install -r shellhound/requirements.txt
-      - name: Score
+      - name: Score every scenario
         working-directory: shellforge
-        # Several seeds and both ends of the scale range. One seed passing is
-        # one arrangement of the noise passing.
+        # `--all` also reports coverage summed over the catalogue, which is
+        # the only level at which coverage means anything: per case it says
+        # what one narrative happened to touch.
+        run: python -m shellforge check --all --shellhound ../shellhound
+      - name: Score across seeds
+        working-directory: shellforge
+        # One seed passing is one arrangement of the noise passing. The
+        # baseline is randomised, so a rule that only survives a particular
+        # spread of ordinary traffic fails here and not above.
         run: |
-          for seed in 1 2 3 42; do
-            python -m shellforge check --seed "$seed" --shellhound ../shellhound
+          for seed in 2 3 42 4711; do
+            python -m shellforge check --all --seed "$seed" --shellhound ../shellhound
           done
-          python -m shellforge check --seed 8 --scale large --rotate-days 7 --shellhound ../shellhound
+      - name: Score at scale
+        working-directory: shellforge
+        # A quarter of a million log lines, rotated and gzipped. This is
+        # where "55,000 lines per second" stops being a claim.
+        run: python -m shellforge check --seed 8 --scale large --rotate-days 7 --shellhound ../shellhound

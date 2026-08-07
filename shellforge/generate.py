@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from shellforge import scenarios
@@ -46,6 +47,19 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
 
     # --- evidence -----------------------------------------------------------
     digests = webroot.write(case_dir / "webroot", case.files, verify=verify)
+
+    # Permissions come off AFTER the verification pass, never before: the
+    # check exists to catch a virus scanner eating evidence, and a file this
+    # case made unreadable on purpose would look exactly like that. Order is
+    # the whole trick -- write, prove it landed, then take the rights away.
+    for rel in case.unreadable_paths:
+        target = case_dir / "webroot" / rel
+        try:
+            os.chmod(target, 0)
+        except OSError:
+            # Windows ignores a mode of 0 for the owner. The scenario is
+            # expected to have checked the platform and planted nothing.
+            pass
 
     # The clean side of the diff: the same installation minus what the attack
     # added, with the originals restored where it overwrote something.
@@ -83,15 +97,37 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
         "planted": len(case.truth.planted),
         "must_not_fire": len(case.truth.must_not_fire),
         "expected_rules": sorted(case.truth.expected_rule_ids()),
-        # A fingerprint of the whole case. Two runs of the same seed must
-        # produce the same value; if they do not, something unseeded crept in.
-        "digest": hashlib.sha256(
-            "".join(f"{k}:{v}" for k, v in sorted(digests.items()))
-            .encode()).hexdigest()[:16],
+        # A fingerprint of the WHOLE case, logs and dump included -- not just
+        # the webroot. Hashing only the files made every scenario that leaves
+        # the installation alone (clean-baseline, bruteforce-admin,
+        # db-only-spam, probe-wave) share one digest, so the determinism
+        # check silently stopped covering their logs, which is the only
+        # evidence those cases have.
+        "digest": _case_digest(case_dir, digests),
     }
     (case_dir / "README.md").write_text(_readme(case, summary),
                                         encoding="utf-8")
     return summary
+
+
+def _case_digest(case_dir: Path, webroot_digests: dict) -> str:
+    """One value over every piece of evidence the case emitted.
+
+    Reads the logs and the dump back off disk rather than hashing what was
+    meant to be written: the point of the number is to prove that two runs
+    produced the same BYTES, and bytes only exist on disk.
+    """
+    h = hashlib.sha256()
+    for rel, digest in sorted(webroot_digests.items()):
+        h.update(f"{rel}:{digest}\n".encode())
+    for name in sorted(p.name for p in (case_dir / "logs").glob("*")):
+        h.update(name.encode())
+        h.update(hashlib.sha256(
+            (case_dir / "logs" / name).read_bytes()).digest())
+    dump = case_dir / "dump.sql"
+    if dump.exists():
+        h.update(hashlib.sha256(dump.read_bytes()).digest())
+    return h.hexdigest()[:16]
 
 
 def _readme(case, summary) -> str:

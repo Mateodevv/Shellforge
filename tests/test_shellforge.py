@@ -198,25 +198,50 @@ class MarkersAreSingleRuleProbes(unittest.TestCase):
 class EndToEnd(unittest.TestCase):
     """Generate, analyse, score. The loop the whole thing exists to close."""
 
-    def test_case_scores_clean(self):
-        if not (SHELLHOUND / "server").is_dir():
-            self.skipTest(f"no Shellhound checkout at {SHELLHOUND}")
+    def _score(self, scenario, seed=42):
         from shellforge.runner import analyse
         from shellforge.score import load_truth, read_findings
 
         with tempfile.TemporaryDirectory() as tmp:
-            summary = generate(scenario="wp-upload-shell", seed=42,
-                               out=Path(tmp))
+            summary = generate(scenario=scenario, seed=seed, out=Path(tmp))
             case = Path(summary["case_dir"])
             analyse(case / "sh", webroot=case / "webroot",
                     logs=case / "logs", dump=case / "dump.sql",
                     shellhound=SHELLHOUND)
-            result = score(load_truth(case / "ground_truth.json"),
-                           read_findings(case / "sh" / "case.db"))
-            self.assertEqual(result.misses, [], "planted but not reported")
-            self.assertEqual(result.false_positives, [],
-                             "reported but not planted")
-            self.assertEqual(result.violations, [])
+            return score(load_truth(case / "ground_truth.json"),
+                         read_findings(case / "sh" / "case.db"))
+
+    def test_every_scenario_scores_clean(self):
+        if not (SHELLHOUND / "server").is_dir():
+            self.skipTest(f"no Shellhound checkout at {SHELLHOUND}")
+        for scenario in scenarios.names():
+            with self.subTest(scenario=scenario):
+                result = self._score(scenario)
+                self.assertEqual(result.misses, [], "planted but not reported")
+                self.assertEqual(result.false_positives, [],
+                                 "reported but not planted")
+                self.assertEqual(result.violations, [],
+                                 "a named silence assertion broke")
+                self.assertEqual(result.wrong_severity, [])
+
+    def test_the_catalogue_reaches_almost_every_rule(self):
+        """Coverage is a property of the CATALOGUE, not of one case.
+
+        The threshold is deliberately not 100%: `webshell.unreadable` needs a
+        genuine read error and is POSIX-only, so a Windows run legitimately
+        falls one short. A drop below this means a scenario stopped firing.
+        """
+        if not (SHELLHOUND / "server").is_dir():
+            self.skipTest(f"no Shellhound checkout at {SHELLHOUND}")
+        from shellforge.score import coverage, shellhound_rule_ids
+        fired = set()
+        for scenario in scenarios.names():
+            fired |= self._score(scenario).fired_rules
+        cov = coverage(fired, shellhound_rule_ids(SHELLHOUND))
+        self.assertGreaterEqual(
+            cov["ratio"], 0.97,
+            f"catalogue coverage fell to {cov['ratio']:.1%}; "
+            f"not exercised: {cov['never_fired']}")
 
 
 class PathNormalisation(unittest.TestCase):
@@ -288,10 +313,26 @@ class ScenarioRegistry(unittest.TestCase):
     def test_every_registered_scenario_builds(self):
         self.assertIn("wp-upload-shell", scenarios.names())
         for name in scenarios.names():
-            with tempfile.TemporaryDirectory() as tmp:
+            with self.subTest(scenario=name), \
+                    tempfile.TemporaryDirectory() as tmp:
                 summary = generate(scenario=name, seed=3, out=Path(tmp))
                 self.assertGreater(summary["planted"], 0,
                                    f"{name} plants nothing")
+
+    def test_no_two_scenarios_produce_the_same_case(self):
+        """A scenario whose narrative silently stopped running would still
+        generate a valid case -- the world builds either way. Identical
+        digests are what that failure looks like from outside."""
+        seen = {}
+        for name in scenarios.names():
+            with tempfile.TemporaryDirectory() as tmp:
+                digest = generate(scenario=name, seed=3,
+                                  out=Path(tmp))["digest"]
+            clash = seen.get(digest)
+            self.assertIsNone(
+                clash, f"{name} and {clash} produced byte-identical evidence; "
+                       f"one of them is not doing anything")
+            seen[digest] = name
 
 
 if __name__ == "__main__":

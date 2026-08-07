@@ -71,42 +71,93 @@ def cmd_score(args) -> int:
     return 0 if result.ok else 1
 
 
-def cmd_check(args) -> int:
-    """Generate, analyse and score in one go."""
+def _run_one(args, scenario: str, workdir: Path, quiet: bool = False):
+    """Generate, analyse and score one scenario. Returns (result, truth)."""
     from shellforge.runner import analyse
 
-    workdir = Path(args.out) if args.out else Path(
-        tempfile.mkdtemp(prefix="shellforge-check-"))
-    keep = bool(args.out)
-    try:
-        summary = generate(
-            scenario=args.scenario, cms=args.cms, seed=args.seed,
-            scale=args.scale, out=workdir, log_format=args.log_format,
-            rotate_days=args.rotate_days,
-            verify=not args.no_verify_readable)
-        case_path = Path(summary["case_dir"])
+    summary = generate(
+        scenario=scenario, cms=args.cms, seed=args.seed,
+        scale=args.scale, out=workdir, log_format=args.log_format,
+        rotate_days=args.rotate_days, verify=not args.no_verify_readable)
+    case_path = Path(summary["case_dir"])
+    if not quiet:
         print(f"generated  {case_path.name}  "
               f"({summary['files']} files, {summary['requests']} log lines)")
 
-        stats = analyse(
-            case_path / "shellhound-case",
-            webroot=case_path / "webroot",
-            logs=case_path / "logs",
-            dump=case_path / "dump.sql",
-            shellhound=Path(args.shellhound))
+    stats = analyse(
+        case_path / "shellhound-case",
+        webroot=case_path / "webroot",
+        logs=case_path / "logs",
+        dump=case_path / "dump.sql",
+        shellhound=Path(args.shellhound))
+    if not quiet:
         print(f"analysed   {stats['webshell'].get('scanned', '?')} files | "
               f"{stats['logs'].get('lines', '?')} log lines indexed")
         print()
 
-        truth = load_truth(case_path / "ground_truth.json")
-        findings = read_findings(case_path / "shellhound-case" / "case.db")
-        result = score(truth, findings)
-        known = shellhound_rule_ids(args.shellhound)
-        cov = coverage(result.fired_rules, known) if known else None
-        print(report(result, truth, cov))
+    truth = load_truth(case_path / "ground_truth.json")
+    findings = read_findings(case_path / "shellhound-case" / "case.db")
+    return score(truth, findings), truth, case_path
+
+
+def cmd_check(args) -> int:
+    """Generate, analyse and score in one go."""
+    workdir = Path(args.out) if args.out else Path(
+        tempfile.mkdtemp(prefix="shellforge-check-"))
+    keep = bool(args.out)
+    known = shellhound_rule_ids(args.shellhound)
+    try:
+        if not args.all:
+            result, truth, case_path = _run_one(args, args.scenario, workdir)
+            cov = coverage(result.fired_rules, known) if known else None
+            print(report(result, truth, cov))
+            if keep:
+                print(f"\ncase kept at {case_path}")
+            return 0 if result.ok else 1
+
+        # --- every scenario, with coverage summed over all of them ----------
+        # COVERAGE IS ONLY MEANINGFUL IN AGGREGATE. Measured per case it says
+        # what one narrative happened to touch, which is not a fact about the
+        # rule set. Measured over the whole catalogue it says which rules no
+        # case in this repository can fail on -- and that is the work list.
+        fired: set = set()
+        failed = []
+        print(f"{'scenario':<20} {'recall':>8} {'precision':>10} "
+              f"{'rules':>6}   result")
+        print("-" * 60)
+        for scenario in scenarios.names():
+            result, truth, _path = _run_one(args, scenario, workdir,
+                                            quiet=True)
+            fired |= result.fired_rules
+            status = "ok" if result.ok else "FAIL"
+            if not result.ok:
+                failed.append((scenario, result, truth))
+            print(f"{scenario:<20} {result.recall:>7.1%} "
+                  f"{result.precision:>10.1%} "
+                  f"{len(result.fired_rules):>6}   {status}")
+        print()
+
+        for scenario, result, truth in failed:
+            print(f"===== {scenario} =====")
+            print(report(result, truth, None))
+            print()
+
+        if known:
+            cov = coverage(fired, known)
+            print(f"COMBINED COVERAGE  {cov['ratio']:.1%}  "
+                  f"({len(cov['exercised'])}/"
+                  f"{len(cov['exercised']) + len(cov['never_fired'])} rules "
+                  f"exercised by the catalogue)")
+            if cov["never_fired"]:
+                print()
+                print("NEVER EXERCISED BY ANY SCENARIO -- the work list")
+                for rule in cov["never_fired"]:
+                    print(f"  {rule}")
+        print()
+        print("PASS" if not failed else f"FAIL ({len(failed)} scenario(s))")
         if keep:
-            print(f"\ncase kept at {case_path}")
-        return 0 if result.ok else 1
+            print(f"\ncases kept at {workdir}")
+        return 1 if failed else 0
     finally:
         if not keep:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -145,6 +196,10 @@ def main(argv=None) -> int:
     ck.add_argument("--shellhound", default=str(DEFAULT_SHELLHOUND))
     ck.add_argument("--out", default=None,
                     help="keep the case here instead of a temporary directory")
+    ck.add_argument("--all", action="store_true",
+                    help="run every scenario and report coverage summed over "
+                         "all of them. Per case, coverage only says what one "
+                         "narrative touched")
     ck.set_defaults(func=cmd_check)
 
     ls = sub.add_parser("scenarios", help="list what can be generated")

@@ -41,6 +41,11 @@ class Case:
     modified: dict = field(default_factory=dict)
     #: Hunt patterns this case is meant to be searched with.
     hunt_patterns: list = field(default_factory=list)
+    #: Paths to make unreadable AFTER writing and verifying them. POSIX only;
+    #: see `generate.generate`. This is the only way to exercise the rule
+    #: about a file the scanner could not open, and the only reason a case
+    #: ever touches permissions.
+    unreadable_paths: list = field(default_factory=list)
 
 
 REGISTRY = {}
@@ -53,8 +58,24 @@ def register(name):
     return wrap
 
 
+#: Imported for their side effect of registering. An explicit list rather than
+#: a `pkgutil` walk: a scenario that fails to import should break the run
+#: loudly at a named line, not disappear from the catalogue and take its
+#: assertions with it. A silently missing scenario is a silently missing test.
+_MODULES = (
+    "wp_upload_shell", "bruteforce_admin", "db_only_spam", "shell_kit",
+    "probe_wave", "ghost_shell", "false_guard", "clean_baseline",
+)
+
+
+def _load():
+    import importlib
+    for module in _MODULES:
+        importlib.import_module(f"shellforge.scenarios.{module}")
+
+
 def get(name):
-    from shellforge.scenarios import wp_upload_shell  # noqa: F401  (registers)
+    _load()
     if name not in REGISTRY:
         raise KeyError(f"unknown scenario {name!r}; have: "
                        f"{', '.join(sorted(REGISTRY))}")
@@ -62,5 +83,5 @@ def get(name):
 
 
 def names():
-    from shellforge.scenarios import wp_upload_shell  # noqa: F401
+    _load()
     return sorted(REGISTRY)
