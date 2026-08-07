@@ -67,15 +67,48 @@ def build(rng, site, scale: str = "small") -> Case:
         case.requests.append(Request(
             when=breakthrough + timedelta(minutes=1 + i * 2), ip=winner,
             method=rng.weighted([("GET", 3), ("POST", 1)]),
-            uri=rng.choice(site.admin_paths),
+            uri=rng.choice(common.work_paths(site)),
             status=200, size=rng.randint(9000, 30000), agent=common.QUIET_UA))
+    # And the request that PROVES it: a 2xx out of the authenticated backend,
+    # which is what an unauthenticated client cannot get. Not every CMS has
+    # one Shellhound recognises -- see below.
+    if site.authenticated_area:
+        case.requests.append(Request(
+            when=breakthrough + timedelta(minutes=2), ip=winner, method="GET",
+            uri=site.authenticated_area, status=200, size=21400,
+            agent=common.QUIET_UA))
+
+    winner_rules = common.login_rules_for(site, tries + 1)
     truth.plant(Planted(
         kind="client", ident=winner,
-        expect_rules=["logs.login_flood", "logs.login_success"],
-        expect_severity="high",
-        note="tried the login several dozen times and was then REDIRECTED -- "
-             "which is what a successful login looks like. Followed "
-             "immediately by user administration"))
+        expect_rules=winner_rules,
+        expect_severity="high" if "logs.login_success" in winner_rules
+        else "medium",
+        note="tried the login several dozen times, then reached the backend "
+             "and was answered 2xx -- a page an unauthenticated session does "
+             "not get. THE redirect alone would prove nothing: Joomla answers "
+             "every login POST with a 303 whether the password was right or "
+             "not"))
+    if "logs.login_success" not in winner_rules:
+        truth.keep_quiet(
+            winner, rules=["logs.login_success"],
+            reason="THIS IS THE CASE THE RULE EXISTS FOR -- somebody guessed "
+                   "a password and used the account -- and it cannot fire "
+                   "here. `AUTHENTICATED_AREA_RE` is "
+                   "`/administrator/index.php?...option=com_...`, which is "
+                   "Joomla's URL shape; no WordPress admin URL matches it, "
+                   "so the proof-of-access half has nothing to match on. The "
+                   "flood still reports at MEDIUM")
+        truth.note(
+            "DETECTION GAP. On WordPress `logs.login_success` is "
+            "unreachable. The flood half works -- `wp-login.php` is a "
+            "recognised login endpoint -- but the second condition, a 2xx "
+            "from a recognised authenticated backend area, is defined only "
+            "for Joomla. The natural WordPress analogue would be `/wp-admin/` "
+            "excluding `admin-ajax.php` and `admin-post.php`, which are "
+            "reachable without a session. Until then the only HIGH log rule "
+            "about a successful break-in cannot fire on the most widely "
+            "deployed CMS there is.")
     truth.event(t0, winner, "bruteforce_begins", f"{tries} POSTs to "
                                                  f"{site.login_path}")
     truth.event(breakthrough, winner, "login_success",

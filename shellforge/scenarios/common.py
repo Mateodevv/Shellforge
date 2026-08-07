@@ -26,6 +26,25 @@ QUIET_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like "
             "Gecko) Chrome/98.0.4758.102 Safari/537.36")
 
 
+def work_paths(site):
+    """Admin paths that are NOT the login endpoint.
+
+    IN JOOMLA THEY ARE THE SAME URL. `/administrator/index.php` is both the
+    login form and the control panel, so "a few minutes of editing after
+    signing in" was posting to the login endpoint and being counted as thirty
+    more login attempts. WordPress hides the problem because `wp-login.php`
+    and `wp-admin/` are different paths.
+
+    That ambiguity is real and not the generator's to solve -- a Joomla
+    access log genuinely cannot tell a login POST from a save-article POST by
+    URI alone. What the generator CAN do is not manufacture it: real admin
+    work goes to `index.php?option=com_...`, which is a distinct URI, and
+    that is what these are.
+    """
+    return [p for p in site.admin_paths if p != site.login_path] \
+        or site.admin_paths
+
+
 def baseline(rng, site, start: datetime, days: int, per_day: int):
     """Ordinary traffic: recurring visitors, crawlers, an editor at work.
 
@@ -74,7 +93,7 @@ def baseline(rng, site, start: datetime, days: int, per_day: int):
                 out.append(Request(
                     when=when + timedelta(minutes=i + 1), ip=editor_ip,
                     method=rng.weighted([("GET", 4), ("POST", 1)]),
-                    uri=rng.choice(site.admin_paths),
+                    uri=rng.choice(work_paths(site)),
                     status=200, size=rng.randint(3000, 28000), agent=agent))
     return out, editor_ip
 
@@ -135,59 +154,83 @@ def plant_scanners(truth, requests):
 LOGIN_THRESHOLD = 30
 
 
+def login_rules_for(site, login_count: int):
+    """Which brute-force rules a client with this many logins should produce.
+
+    TWO CONDITIONS, AND THE SECOND IS CMS-DEPENDENT.
+
+    `logs.login_flood` needs thirty login POSTs from one address. That is
+    length-dependent and nothing else: an administrator signing in once every
+    working morning crosses it after about six weeks.
+
+    `logs.login_success` needs the flood PLUS a 2xx from the authenticated
+    backend -- something an unauthenticated client cannot obtain. That
+    condition replaced an earlier one ("plus a redirect") after real case data
+    showed Joomla answering every login POST with a 303 regardless of whether
+    the credentials were right, so a client with 121 failures was reported as
+    a break-in. The replacement is correct.
+
+    IT IS ALSO JOOMLA-SHAPED. `AUTHENTICATED_AREA_RE` matches
+    `/administrator/index.php?...option=com_...` and nothing else, so no
+    WordPress URL can satisfy it -- `/wp-admin/` is not recognised. On a
+    WordPress case the flood half still fires and the success half cannot,
+    which means the only HIGH log rule about a successful break-in is
+    unreachable there. `Site.authenticated_area` is empty for exactly that
+    reason, and this function reads it rather than assuming.
+    """
+    if login_count < LOGIN_THRESHOLD:
+        return []
+    rules = ["logs.login_flood"]
+    if site is not None and site.authenticated_area:
+        rules.append("logs.login_success")
+    return rules
+
+
 def plant_editor(truth, editor_ip, requests=(), site=None):
     """The site's own editor, and what happens to them on a long log.
 
-    A FINDING ABOUT SHELLHOUND, RECORDED RATHER THAN ENDORSED. The two
-    brute-force rules count login POSTs per ADDRESS with no time window, so
-    the threshold is a function of how long the log is rather than of how
-    anybody behaved. Six days of traffic: the editor signs in a handful of
-    times and stays quiet, as they should. Sixty days: the same person, same
-    office address, same one login per working morning, crosses thirty POSTs
-    and is reported as a *possible successful brute-force* at HIGH -- because
-    every one of those logins was answered with a redirect, which is exactly
-    what the rule looks for.
-
-    So this cannot be a fixed assertion either way. The ground truth counts
-    what was actually generated and states the consequence, which keeps every
-    scenario honest at every scale and makes the crossover visible instead of
-    turning it into a flaky test at `--scale large`.
-
-    `long-tail-admin` is the scenario that reproduces it on purpose.
+    Counting rather than asserting: six days of traffic and the editor signs
+    in a handful of times and stays silent, as they should; sixty days and
+    the same person crosses thirty POSTs. A fixed assertion either way would
+    pass at one scale and flip at another, which is how a suite becomes
+    flaky. `long-tail-admin` reproduces the crossover on purpose.
     """
     from shellforge.truth import Planted
     login_path = getattr(site, "login_path", None)
     logins = [r for r in requests
               if r.ip == editor_ip and r.method == "POST"
               and (login_path is None or r.uri == login_path)]
+    rules = login_rules_for(site, len(logins))
 
-    if len(logins) < LOGIN_THRESHOLD:
+    if not rules:
         truth.keep_quiet(
             editor_ip,
             rules=["logs.login_success", "logs.login_flood"],
             reason=f"the editor signed in {len(logins)} times over the whole "
-                   f"log and was redirected each time. One login is not a "
-                   f"flood; the threshold is {LOGIN_THRESHOLD}")
+                   f"log. One login is not a flood; the threshold is "
+                   f"{LOGIN_THRESHOLD}")
         return
 
     truth.plant(Planted(
         kind="client", ident=editor_ip,
-        expect_rules=["logs.login_flood", "logs.login_success"],
-        expect_severity="high",
-        note=f"THE SITE'S OWN EDITOR, reported as a possible successful "
-             f"brute-force. {len(logins)} logins over the length of this log, "
-             f"one per working morning, each answered with a redirect -- "
-             f"which is what the rule looks for. Nothing here is an attack. "
-             f"Recorded because it is what a correct run currently produces, "
-             f"not because it is the right answer"))
+        expect_rules=rules,
+        expect_severity="high" if "logs.login_success" in rules else "medium",
+        note=f"THE SITE'S OWN EDITOR. {len(logins)} logins over the length of "
+             f"this log, one per working morning -- past the threshold of "
+             f"{LOGIN_THRESHOLD} purely because the log is long. Nothing here "
+             f"is an attack"))
+    if "logs.login_success" not in rules:
+        truth.keep_quiet(
+            editor_ip, rules=["logs.login_success"],
+            reason="no 2xx from a recognised authenticated backend area, so "
+                   "the flood stays a flood. On this CMS that is not a "
+                   "judgement about the traffic -- see the note")
     truth.note(
-        f"SCALE-DEPENDENT FALSE POSITIVE. `logs.login_flood` and "
-        f"`logs.login_success` count login POSTs per address with no time "
-        f"window, so their threshold of {LOGIN_THRESHOLD} is a function of "
-        f"how long the log is. This case's editor made {len(logins)} ordinary "
-        f"logins and is reported at HIGH. On a six-day log the same behaviour "
-        f"is silent. See the `long-tail-admin` scenario, which reproduces it "
-        f"deliberately and at any scale.")
+        f"SCALE-DEPENDENT THRESHOLD. `logs.login_flood` counts login POSTs "
+        f"per address with no time window, so {LOGIN_THRESHOLD} is a function "
+        f"of how long the log is. This editor made {len(logins)} ordinary "
+        f"logins. On a six-day log the same behaviour is silent. See "
+        f"`long-tail-admin`.")
 
 
 def warning_noise(rng, site, start: datetime, days: int, count=(4, 10)):

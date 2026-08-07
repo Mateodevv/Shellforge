@@ -218,6 +218,11 @@ def build(rng, scale: str = "small") -> Site:
                      "/wp-admin/post.php", "/wp-admin/users.php",
                      "/wp-admin/user-new.php", "/wp-admin/plugin-install.php",
                      "/wp-admin/options-general.php"],
+        # DELIBERATELY EMPTY. Shellhound's AUTHENTICATED_AREA_RE is
+        # `/administrator/index.php?...option=com_...` -- Joomla's URL shape
+        # and nothing else. No WordPress admin URL matches it, so there is no
+        # value that could go here honestly. See the note in bruteforce-admin.
+        authenticated_area="",
         guarded_core="/wp-includes/functions.php",
         quiet_upload_files=["wp-content/uploads/.htaccess",
                             "wp-content/uploads/index.php"],

@@ -87,6 +87,11 @@ class Site:
     login_path: str = ""
     #: What an authenticated administrator requests after signing in.
     admin_paths: list = field(default_factory=list)
+    #: A URL that PROVES an authenticated backend session on this CMS --
+    #: something an unauthenticated client cannot get a 2xx from. Empty when
+    #: Shellhound has no way to recognise one for this CMS, which is itself a
+    #: fact a scenario has to be able to state.
+    authenticated_area: str = ""
     #: Where the active theme/template lives, webroot-relative.
     theme_dir: str = ""
     #: A genuine core file with a bootstrap guard and nothing executable --

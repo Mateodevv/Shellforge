@@ -228,6 +228,26 @@ is `webshell.unreadable`, which needs a genuine filesystem read error:
 scenario plants it on POSIX and writes a note into the ground truth on
 Windows rather than quietly claiming coverage the platform does not have.
 
+### bruteforce-admin reproduces a detection gap on WordPress
+
+`logs.login_success` — the only HIGH log rule about a successful break-in —
+needs a flood **plus** a 2xx from the authenticated backend. That second
+condition is right: it replaced "plus a redirect", which Joomla hands out for
+every login attempt whether the password was correct or not.
+
+But `AUTHENTICATED_AREA_RE` is `/administrator/index.php?…option=com_…` —
+Joomla's URL shape, and only that. No WordPress admin URL matches it, while
+`wp-login.php` *is* a recognised login endpoint. So on WordPress the flood
+half fires and the proof half has nothing to match on, and **the rule cannot
+fire at all** on the most widely deployed CMS there is.
+
+The scenario runs on both profiles and asserts the difference: on Joomla the
+intruder produces both rules; on WordPress the ground truth expects the flood
+and explicitly forbids the success, with the reason attached.
+
+The natural WordPress analogue would be `/wp-admin/` excluding
+`admin-ajax.php` and `admin-post.php`, which are reachable without a session.
+
 ### long-tail-admin reproduces a scale-dependent false positive
 
 `logs.login_flood` triggers on thirty login POSTs from one address;
@@ -241,7 +261,7 @@ answered with the redirect a successful login produces:
 | | |
 |---|---|
 | after ~6 weeks | ~30 logins → flood. MEDIUM |
-| after ~9 weeks | ~46 logins → *possible successful brute-force*. **HIGH** |
+| after ~9 weeks | ~46 logins, plus the backend pages they legitimately opened → **HIGH** on Joomla |
 
 Nothing about the site changed and nobody attacked it. The case contains no
 attacker at all — clean webroot, untouched database, every probe answered 404
@@ -249,11 +269,18 @@ attacker at all — clean webroot, untouched database, every probe answered 404
 present, who stays silent. The two differ in nothing except how long they
 appear in the log.
 
-This was found by the scale test rather than by inspection: `--scale large`
-generates sixty days of traffic, and the site's own editor crossed the
-threshold. `common.plant_editor` now counts the logins it generated and
-predicts the consequence, so every scenario stays honest at every scale
-instead of flipping at one.
+The proof-of-access half of the rule is doing its job here; the administrator
+matches it because they really did log in. What is left is the **count**:
+thirty login POSTs with no time window is a threshold on the length of the
+log, not on anybody's behaviour. The index already carries the timestamps, and
+already counts `login_statuses` — a brute force leaves a long tail of failures
+before it succeeds, and this administrator left none.
+
+Found by the scale test rather than by inspection: `--scale large` generates
+sixty days of traffic and the site's own editor crossed the threshold.
+`common.plant_editor` now counts the logins it generated and predicts the
+consequence, so every scenario stays honest at every scale instead of flipping
+at one.
 
 ### joomla-helix3 reproduces a detection gap
 

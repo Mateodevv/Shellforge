@@ -294,6 +294,9 @@ def build(rng, scale: str = "small") -> Site:
                      "/administrator/index.php?option=com_installer",
                      "/administrator/index.php?option=com_templates",
                      "/administrator/index.php?option=com_config"],
+        # A 2xx here is what an unauthenticated client cannot obtain: the
+        # backend with a component named.
+        authenticated_area="/administrator/index.php?option=com_content",
         guarded_core="/components/com_content/src/View/Article/HtmlView.php",
         quiet_upload_files=["images/index.html", "images/joomla_black.png"],
         content_table="content", config_table="extensions",

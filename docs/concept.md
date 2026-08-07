@@ -209,9 +209,30 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
-### Fünf Befunde aus dem Bau
+### Sechs Befunde aus dem Bau
 
-**Die Bruteforce-Regeln sind von der Loglänge abhängig, nicht vom Verhalten.**
+**Shellforge hat eine Verhaltensänderung in Shellhound erkannt, und zwar
+sofort.** Zwischen zwei Läufen kam Shellhounds Commit *„Das Werkzeug hat den
+Betreiber der Seite des Einbruchs beschuldigt"* (5a14eb1) dazu: aus echten
+Falldaten mit 1,33 Mio. Logzeilen war klar geworden, dass ein Redirect kein
+Erfolg ist — Joomla beantwortet jeden Login-POST mit 303 — und dass ein POST
+mit `option=com_*` kein Login-Versuch ist. Beide Korrekturen sind richtig.
+Die Szenarien wurden rot, weil sie noch das alte Verhalten erwarteten, und
+genau dafür existiert das Repo: die CI wird rot, wenn *drüben* etwas anders
+wird, und der Score-Report sagt welche Zusage nicht mehr gilt.
+
+**`logs.login_success` kann auf WordPress nicht mehr feuern.** Der Ersatz für
+den Redirect ist ein 2xx aus dem authentifizierten Backend — richtig, aber
+`AUTHENTICATED_AREA_RE` lautet `/administrator/index.php?…option=com_…` und
+matcht damit nur Joomlas URL-Form. `wp-login.php` gilt weiterhin als
+Login-Endpunkt, die Flut-Hälfte greift also; die Beweis-Hälfte hat auf
+WordPress nichts zum Matchen. Die einzige HIGH-Log-Regel über einen
+erfolgreichen Einbruch ist auf dem meistverbreiteten CMS tot. Das Szenario
+`bruteforce-admin` läuft auf beiden Profilen und behauptet den Unterschied
+explizit. Naheliegendes Gegenstück wäre `/wp-admin/` ohne `admin-ajax.php`
+und `admin-post.php`, die auch ohne Session erreichbar sind.
+
+**Die Bruteforce-Schwelle ist weiterhin von der Loglänge abhängig.**
 `logs.login_flood` zählt 30 Login-POSTs pro Adresse, `logs.login_success` 30
 plus ein 3xx — beide ohne Zeitfenster. Ein Administrator, der jeden
 Werktagmorgen einmal ein Login macht und jedes Mal den Redirect eines

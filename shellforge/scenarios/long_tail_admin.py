@@ -72,7 +72,7 @@ def _daily_logins(rng, site, ip, start, days, agent):
                 out.append(Request(
                     when=when + timedelta(minutes=i + 1), ip=ip,
                     method=rng.weighted([("GET", 5), ("POST", 1)]),
-                    uri=rng.choice(site.admin_paths), status=200,
+                    uri=rng.choice(common.work_paths(site)), status=200,
                     size=rng.randint(4000, 26000), agent=agent))
             done += 1
         day += timedelta(days=1)
@@ -105,15 +105,27 @@ def build(rng, site, scale: str = "small") -> Case:
     case.requests += logins
     count = sum(1 for r in logins if r.method == "POST"
                 and r.uri == site.login_path)
+    # They also do their job, which on a CMS with a recognisable backend
+    # means a 2xx out of it -- the same signal a successful intruder leaves,
+    # because it IS the same signal. That is the residue of the problem after
+    # the redirect-based version was fixed: the discriminator now works, and
+    # a legitimate administrator still matches it, because they legitimately
+    # logged in.
+    if site.authenticated_area:
+        case.requests.append(Request(
+            when=start + timedelta(days=2, hours=9), ip=admin_ip,
+            method="GET", uri=site.authenticated_area, status=200,
+            size=19800, agent=agent))
+    rules = common.login_rules_for(site, count)
     truth.plant(Planted(
         kind="client", ident=admin_ip,
-        expect_rules=["logs.login_flood", "logs.login_success"],
-        expect_severity="high",
+        expect_rules=rules,
+        expect_severity="high" if "logs.login_success" in rules else "medium",
         note=f"the site's own administrator. {count} logins, one per working "
-             f"morning at office hours, from one address, each answered with "
-             f"the redirect a successful login produces, each followed by a "
-             f"few minutes of editing. Reported as a possible successful "
-             f"brute-force at HIGH. NOTHING ATTACKED THIS SITE"))
+             f"morning at office hours, from one address, each followed by a "
+             f"few minutes of editing. NOTHING ATTACKED THIS SITE, and the "
+             f"only thing that put them over the threshold is how long they "
+             f"have been in the log"))
     truth.event(start, admin_ip, "daily_work",
                 f"{count} logins over {WORKING_DAYS} working days")
 
@@ -142,10 +154,20 @@ def build(rng, site, scale: str = "small") -> Case:
         "only thing separating them is the number of days each appears in "
         "the log.")
     truth.note(
-        "SUGGESTED SHAPE OF A FIX, for whoever picks this up: the rules "
-        "already know the timestamps. A flood is thirty attempts in a "
+        "WHAT IS LEFT AFTER THE REDIRECT FIX. `logs.login_success` used to "
+        "accept a redirect as proof of a successful login, which Joomla "
+        "hands out for every attempt regardless; it now requires a 2xx from "
+        "the authenticated backend, which is right. This administrator "
+        "produces that signal too -- because they really did log in. So the "
+        "remaining question is not the discriminator but the COUNT: thirty "
+        "login POSTs with no time window is a threshold on the length of the "
+        "log, not on anybody's behaviour.")
+    truth.note(
+        "SUGGESTED SHAPE OF A FIX, for whoever picks this up: the index "
+        "already knows the timestamps. A flood is thirty attempts in a "
         "WINDOW, not thirty attempts. A second discriminator that costs "
-        "nothing: a brute force produces many failures before its redirect, "
-        "and this administrator produced none -- every single POST here was "
-        "answered 302 on the first try.")
+        "nothing is already being counted -- `login_statuses`: a brute force "
+        "produces a long tail of failures before it succeeds, and this "
+        "administrator produced none. Every POST here was answered on the "
+        "first try.")
     return case
