@@ -26,8 +26,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ['3.10', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       # No dependencies to install. If that ever stops being true, this line
@@ -45,8 +45,8 @@ jobs:
     name: A seed determines the bytes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       # The claim the whole tool rests on, checked as a claim rather than as
@@ -68,14 +68,14 @@ jobs:
     # different reasons -- a regression here, or a detection regression
     # there -- and the score report says which.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: shellforge
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Mateodevv/shellhound
           path: shellhound
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: SHELLHOUND dependencies
