@@ -218,6 +218,27 @@ def build_rce(rng, site, scale: str = "small") -> Case:
         message="Uncaught Error: Call to undefined function shell_exe()",
         path=f"{common.WEBROOT_ABS}/{conventional}", line=2, client=attacker))
 
+    # --- a third one, dropped where the CMS ships nothing ------------------
+    # `components/` holds directories, never a loose PHP file, so a request
+    # for one answered 2xx is its own statement. The write primitive can put
+    # a file anywhere, and this is the depth `logs.cms_dir_php` is about --
+    # a rule shaped for Joomla's layout, which no WordPress path can reach.
+    at_depth = "components/tmpl.php"
+    case.files[at_depth] = markers.VAR_FUNC
+    case.added_paths.append(at_depth)
+    truth.plant(Planted(
+        kind="file", ident=f"/{at_depth}",
+        expect_rules=["webshell.var_func"], expect_severity="high",
+        note="a loose PHP file directly in `components/`, where Joomla ships "
+             "only directories. Outside every upload segment, so the "
+             "location rule stays out of it and the content rule carries it"))
+    for i in range(rng.randint(3, 6)):
+        case.requests.append(Request(
+            when=t0 + timedelta(minutes=25 + i * rng.randint(2, 9)),
+            ip=attacker, method="GET", uri=f"/{at_depth}?f=id", status=200,
+            size=rng.randint(40, 500), agent=common.QUIET_UA))
+    truth.event(t0 + timedelta(seconds=74), attacker, "drop_shell", at_depth)
+
     for i in range(rng.randint(4, 10)):
         case.requests.append(Request(
             when=t0 + timedelta(minutes=3 + i * rng.randint(2, 13)),
@@ -226,12 +247,14 @@ def build_rce(rng, site, scale: str = "small") -> Case:
             status=200, size=rng.randint(40, 700), agent=common.QUIET_UA))
     truth.plant(Planted(
         kind="client", ident=attacker,
-        expect_rules=["logs.upload_php"], expect_severity="high",
-        note="the log rule catches this intrusion through the SECOND shell, "
-             "the one in the images tree. Requests for `up.php.json` at the "
-             "webroot root produce nothing, because that path carries no "
-             "upload segment -- so here the log is the only engine that sees "
-             "the compromise at all"))
+        expect_rules=["logs.upload_php", "logs.cms_dir_php"],
+        expect_severity="high",
+        note="two separate log rules catch this intrusion: the shell in the "
+             "images tree (upload_php) and the loose PHP file directly in "
+             "`components/` (cms_dir_php, where the CMS ships nothing at "
+             "that depth). Requests for `up.php.json` at the webroot root "
+             "produce neither -- that path carries no upload segment and is "
+             "not at extension depth"))
     truth.event(t0 + timedelta(minutes=3), attacker, "use_shell",
                 f"GET /{DROPPED}?cmd=... answered 200")
 

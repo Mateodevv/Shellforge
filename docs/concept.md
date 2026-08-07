@@ -209,7 +209,21 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
-### Sieben Befunde aus dem Bau
+### Acht Befunde aus dem Bau
+
+**Bei CVE-2015-1579 hat das Outcome-Gating nichts zu greifen.** `admin-ajax.php`
+antwortet auf die RevSlider-LFI **immer** 200 — ob die Datei zurückkam oder
+nicht. Das Szenario `revslider-lfi` enthält zwei Adressen mit identischen
+Requests: eine hat `wp-config.php` erbeutet (2.900–5.200 Bytes je Antwort),
+die andere nichts (41 Bytes). Ein korrekter Lauf meldet heute **beide gleich**.
+Der Unterschied steht in der Größenspalte, die das Combined-Format seit jeher
+mitführt und die niemand liest; die Ground Truth hält die Werte unter
+`byte_counts` fest, damit eine künftige Regel etwas zum Prüfen hat.
+Nebenbefund, gemessen: der verwundbare Slider ist **im Theme gebündelt** und
+taucht deshalb nicht im CMS-Inventar auf — der Rat „Version im Inventar
+prüfen" trägt ausgerechnet bei der Klasse nicht, die diese CVE berühmt gemacht
+hat.
+
 
 **Eine Datei über ihrer Nutzlast zu ändern spaltet die Entscheidung.** Der
 Fingerprint ist `source|rule|artifact|line`. Fügt ein Angreifer Zeilen *vor*

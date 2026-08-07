@@ -174,6 +174,7 @@ exercising all 34 of Shellhound's rules.
 | `probe-wave` | both | Identical SQLi and traversal payloads, one address answered 200 and one answered 404. Outcome gating, both halves |
 | `false-guard` | both | A forged guard string in a comment. The documented limitation, pinned from both sides |
 | `ghost-shell` | both | Shell deleted before the copy was taken. **Reproduces a discrepancy** — see below |
+| `revslider-lfi` | WordPress | CVE-2015-1579. Two addresses, identical requests, both answered 200 — one took the database credentials. **Outcome gating has nothing to gate on** |
 | `long-tail-admin` | both | No attack at all, for long enough that it looks like one. **Reproduces a scale-dependent false positive** — see below |
 | `clean-baseline` | both | A working site where nothing happened. Expectation: INFO about the scanners and nothing else |
 
@@ -347,6 +348,38 @@ and explicitly forbids the success, with the reason attached.
 
 The natural WordPress analogue would be `/wp-admin/` excluding
 `admin-ajax.php` and `admin-post.php`, which are reachable without a session.
+
+### revslider-lfi: the status code cannot separate them
+
+Slider Revolution before 3.0.96 read any file the query string named, and
+`admin-ajax.php` **answers 200 whether the read worked or not**. A success
+returns `wp-config.php` — database host, user, password, salts. A failure
+returns a few dozen bytes. Both are `200`.
+
+Outcome gating on the status code is right in general and useless here. The
+case contains two addresses sending the *same* requests:
+
+| | answered | response size |
+|---|---|---|
+| exfiltrated | 200 | 2,900–5,200 bytes — the file came back |
+| repelled | 200 | 41 bytes — nothing came back |
+
+A correct run today reports them **identically**, and the ground truth says
+so rather than pretending otherwise. The discriminator that does exist is the
+response size, which the combined log format has carried all along in a
+column nothing reads. The sizes are recorded under `byte_counts` so a future
+rule has something to be checked against.
+
+Two further things this case pins, both measured rather than assumed:
+
+- The vulnerable slider sits **inside the theme**, not in
+  `wp-content/plugins` — that is how the CVE spread, because the site owner
+  did not know they had it. The CMS inventory consequently does not list it,
+  so "check the version in the inventory" does not work for this class. The
+  shipped hunt pattern says so instead of repeating the advice.
+- Nothing was dropped. It is a read: the webroot is untouched and what the
+  attacker took left in a response body, which is the one thing an access log
+  never keeps.
 
 ### long-tail-admin reproduces a scale-dependent false positive
 
