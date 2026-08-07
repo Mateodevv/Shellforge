@@ -1,0 +1,46 @@
+SHELLFORGE
+Copyright 2026 SHELLFORGE contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Third-party components
+================================================================================
+
+None. Shellforge runs on the Python standard library alone.
+
+That is a deliberate constraint rather than an accident: it has to run in the
+same CI job as SHELLHOUND's own test suite, which takes no extra dependencies
+either. Word material is shipped in `shellforge/corpus.py` instead of pulled
+from a generator library, because a tool whose output changes with somebody
+else's release cadence is not reproducible, and reproducibility is the whole
+premise here.
+
+Scoring a case reads SHELLHOUND (https://github.com/Mateodevv/shellhound,
+Apache-2.0) if a checkout is present. It is not vendored, not bundled and not
+required to generate a case.
+
+================================================================================
+On the contents of generated cases
+================================================================================
+
+Everything Shellforge emits is invented.
+
+  * IP addresses come from the documentation ranges reserved by RFC 5737
+    (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24). No address that routes.
+  * Domains end in .test, reserved by RFC 6761.
+  * Personal names, plugin names and content are made up. Any resemblance to
+    a real plugin is unintended; a real plugin name in a fixture would
+    eventually be read as an accusation against that plugin.
+  * Password hashes have the SHAPE of a phpass hash and are hashes of
+    nothing. There is nothing to crack.
+  * Payloads are inert markers in the spirit of an EICAR file: the shortest
+    text that carries a pattern a detector looks for, and nothing else. No
+    generated file is a working web shell, and none ever should be.
+
+No data from any real incident is contained in this repository or produced by
+it.
+
+The user agent strings in `shellforge/corpus.py` are real, because a log whose
+agents are invented is not a log a parser can be tested against. They identify
+browser and crawler software, not people.

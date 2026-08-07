@@ -1,0 +1,91 @@
+# CI -- runs on every push so that "it builds" is a fact, not a claim.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux and Windows both, and not for symmetry with SHELLHOUND: this
+        # repository normalises absolute paths back to webroot-relative ones,
+        # case-insensitively on one platform and not the other. Path handling
+        # is exactly the class of bug that only the other operating system
+        # reveals, and here it sits in the scorer -- the part that decides
+        # whether a run passes.
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # No dependencies to install. If that ever stops being true, this line
+      # is where it will be noticed.
+      - name: Imports
+        run: python -c "import shellforge.cli, shellforge.generate, shellforge.score; print('import ok')"
+      - name: Tests
+        run: python -m unittest discover -s tests -t . -v
+      # Generation must work without SHELLHOUND present -- a case is evidence
+      # plus ground truth, and neither needs a detector to exist.
+      - name: Generate standalone
+        run: python -m shellforge gen --seed 42 --out ./ci-cases --json
+
+  determinism:
+    name: A seed determines the bytes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      # The claim the whole tool rests on, checked as a claim rather than as
+      # a unit test: two independent processes, not two calls in one.
+      - name: Same seed twice, byte for byte
+        run: |
+          python -m shellforge gen --seed 4711 --scale medium --out ./a --json > a.json
+          python -m shellforge gen --seed 4711 --scale medium --out ./b --json > b.json
+          diff <(python -c "import json;print(json.load(open('a.json'))['digest'])") \
+               <(python -c "import json;print(json.load(open('b.json'))['digest'])")
+          diff -r ./a ./b
+
+  against-shellhound:
+    name: Score against SHELLHOUND
+    runs-on: ubuntu-latest
+    # THE JOB THIS REPOSITORY EXISTS FOR. Everything above tests the
+    # generator; this one tests the thing the generator was built to test.
+    # It checks out SHELLHOUND's main branch, so it turns red for two
+    # different reasons -- a regression here, or a detection regression
+    # there -- and the score report says which.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: shellforge
+      - uses: actions/checkout@v4
+        with:
+          repository: Mateodevv/shellhound
+          path: shellhound
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: SHELLHOUND dependencies
+        run: pip install -r shellhound/requirements.txt
+      - name: Score
+        working-directory: shellforge
+        # Several seeds and both ends of the scale range. One seed passing is
+        # one arrangement of the noise passing.
+        run: |
+          for seed in 1 2 3 42; do
+            python -m shellforge check --seed "$seed" --shellhound ../shellhound
+          done
+          python -m shellforge check --seed 8 --scale large --rotate-days 7 --shellhound ../shellhound

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shellforge"
+version = "0.1.0"
+description = "Generates synthetic CMS incident evidence with ground truth, to test SHELLHOUND"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+# No dependencies, deliberately. Shellhound's own tests run without extras and
+# this has to run in the same CI job. Word corpora are shipped as data instead
+# of pulling in Faker -- a generator whose output depends on a third party's
+# release cadence is not reproducible.
+dependencies = []
+
+[project.scripts]
+shellforge = "shellforge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["shellforge*"]

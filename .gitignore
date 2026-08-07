@@ -1,0 +1,11 @@
+# Generated cases. They are reproducible from a seed, so committing one
+# stores megabytes to say what `--seed 42` already says.
+/cases/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+build/
+dist/
+.venv/
+venv/

@@ -1,0 +1,12 @@
+# Keep repo files LF on every platform. This repository generates cases whose
+# digest is a hash of their bytes and asserts that the same seed reproduces
+# them, so a checkout that rewrites line endings would make the central claim
+# platform-dependent.
+* text=auto eol=lf
+
+# Compressed and binary fixtures: never normalize them.
+*.gz binary
+*.bz2 binary
+*.zip binary
+*.png binary
+*.jpg binary
