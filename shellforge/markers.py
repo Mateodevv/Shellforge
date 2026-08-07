@@ -56,9 +56,22 @@ VAR_FUNC = "<?php\n$f = 'strlen';\n$f($_POST['v']);\n"
 CHR_CONCAT = ("<?php\n$s = chr(115).chr(121).chr(115).chr(116)"
               ".chr(101).chr(109);\n")
 
-#: `webshell.create_function` (HIGH). Removed in PHP 8; present in a file
+#: `webshell.create_function` (MEDIUM). Removed in PHP 8; present in a file
 #: today it is either very old code or a kit that predates the removal.
+#: MEDIUM and not HIGH since the rule was split: on its own, a body built
+#: from a string is also what a library older than PHP 7.2 looks like.
 CREATE_FUNCTION = "<?php\n$f = create_function('$a', 'return $a;');\n"
+
+#: `webshell.callback_input` (HIGH). Split out of `create_function`, and
+#: rightly: whatever the browser can spell, it can call.
+CALLBACK_INPUT = "<?php\ncall_user_func($_GET['f'], 1);\n"
+
+#: `webshell.upload_dest` (MEDIUM). The destination, not the source, comes
+#: from the request -- and whoever chooses the path chooses the extension.
+#: The rule wants a superglobal AFTER the comma, which is what separates it
+#: from the plain idiom.
+UPLOAD_DEST = ("<?php\nmove_uploaded_file($_FILES['f']['tmp_name'], "
+               "$_POST['dest']);\n")
 
 #: `webshell.preg_e` (HIGH). The `/e` modifier made preg_replace evaluate its
 #: replacement as PHP and was removed in PHP 7.
@@ -138,6 +151,8 @@ def php_marker(rule_id: str) -> str:
         "webshell.var_func": VAR_FUNC,
         "webshell.chr_concat": CHR_CONCAT,
         "webshell.create_function": CREATE_FUNCTION,
+        "webshell.callback_input": CALLBACK_INPUT,
+        "webshell.upload_dest": UPLOAD_DEST,
         "webshell.preg_e": PREG_E,
         "webshell.goto": GOTO,
         "webshell.hex_octal": HEX_OCTAL,

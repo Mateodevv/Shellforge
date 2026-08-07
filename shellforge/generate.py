@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 
+from shellforge import hostile as hostile_mod
 from shellforge import scenarios
 from shellforge.render import accesslog, errorlog, sqldump, webroot
 from shellforge.rng import Rng
@@ -28,16 +29,18 @@ from shellforge.world import joomla, wordpress
 WORLDS = {"wordpress": wordpress, "joomla": joomla}
 
 
-def _slug(scenario: str, cms: str, seed: int, scale: str) -> str:
-    # The CMS is in the name because the same scenario runs against several
-    # profiles; without it, generating both into one directory would have the
-    # second silently overwrite the first.
-    return f"{scenario}-{cms}-{scale}-{seed}"
+def _slug(scenario: str, cms: str, seed: int, scale: str, hostile=()) -> str:
+    # The CMS and the axes are in the name because the same scenario runs
+    # against several profiles and shapes; without them, generating two into
+    # one directory would have the second silently overwrite the first.
+    tail = ("-" + "-".join(hostile)) if hostile else ""
+    return f"{scenario}-{cms}-{scale}-{seed}{tail}"
 
 
 def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
              scale: str = "small", out: Path, log_format: str = "apache",
-             rotate_days: int = 0, verify: bool = True) -> dict:
+             rotate_days: int = 0, verify: bool = True,
+             hostile=()) -> dict:
     if cms not in WORLDS:
         raise KeyError(f"unknown cms {cms!r}; have: {', '.join(WORLDS)}")
 
@@ -49,7 +52,15 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     site = WORLDS[cms].build(rng.derive("world"), scale)
     case = build_case(rng.derive("scenario"), site, scale)
 
-    case_dir = Path(out) / _slug(scenario, cms, seed, scale)
+    # AFTER the scenario, and deliberately: an axis reshapes finished
+    # evidence and must not get a say in what happened. The ground truth is
+    # already complete at this point and the axes leave it alone -- which is
+    # what makes "the shape must not change the answer" an assertion rather
+    # than a hope.
+    if hostile:
+        hostile_mod.apply(list(hostile), case, rng.derive("hostile"))
+
+    case_dir = Path(out) / _slug(scenario, cms, seed, scale, hostile)
     case_dir.mkdir(parents=True, exist_ok=True)
 
     # --- evidence -----------------------------------------------------------
@@ -75,7 +86,10 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     webroot.write(case_dir / "reference", clean, verify=verify)
 
     log_files = accesslog.write(case_dir / "logs", case.requests,
-                                fmt=log_format, rotate_days=rotate_days)
+                                fmt=log_format, rotate_days=rotate_days,
+                                bom=case.log_bom, newline=case.log_newline,
+                                encoding=case.log_encoding,
+                                raw_lines=case.raw_log_lines)
     if case.error_lines:
         errorlog.write(case_dir / "logs", case.error_lines)
     sqldump.write(case_dir / "dump.sql", site, extra_rows=case.extra_rows)
@@ -88,6 +102,13 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
         if planted.kind == "file":
             rel = planted.ident.lstrip("/")
             planted.sha256 = digests.get(rel, "")
+    # EVERY ADDRESS THE GENERATOR EMITTED. The findings-based oracle cannot
+    # see a parser that loses a line or invents a client: an ordinary
+    # visitor's request produces no finding either way. The client list is
+    # derived evidence and a statement about who touched the server, so a
+    # phantom in it is a false statement -- and that is checkable against
+    # exactly this set. See `score.check_clients`.
+    case.truth.meta["clients"] = sorted({r.ip for r in case.requests})
     case.truth.write(case_dir / "ground_truth.json")
 
     (case_dir / "hunt_patterns.json").write_text(
@@ -97,6 +118,7 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     summary = {
         "case_dir": str(case_dir),
         "scenario": scenario, "cms": cms, "seed": seed, "scale": scale,
+        "hostile": list(hostile),
         "files": len(case.files),
         "requests": len(case.requests),
         "error_lines": len(case.error_lines),

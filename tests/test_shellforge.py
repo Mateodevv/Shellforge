@@ -347,6 +347,39 @@ class ScenarioRegistry(unittest.TestCase):
         self.assertIn("bruteforce-admin", scenarios.names("joomla"))
         self.assertIn("bruteforce-admin", scenarios.names("wordpress"))
 
+    def test_every_hostile_axis_changes_the_evidence_and_not_the_truth(self):
+        """The oracle the axes rest on, asserted rather than assumed.
+
+        An axis reshapes the file and leaves the ground truth alone. If one
+        ever started editing `planted`, `--hostile` would quietly stop being
+        a test of the reader and become a test of itself.
+        """
+        from shellforge import hostile
+        base_dir = tempfile.TemporaryDirectory()
+        base = generate(scenario="wp-upload-shell", seed=9,
+                        out=Path(base_dir.name))
+        base_truth = json.loads(
+            (Path(base["case_dir"]) / "ground_truth.json").read_text("utf-8"))
+        try:
+            for name in hostile.names():
+                with self.subTest(axis=name), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    got = generate(scenario="wp-upload-shell", seed=9,
+                                   out=Path(tmp), hostile=[name])
+                    truth = json.loads((Path(got["case_dir"])
+                                        / "ground_truth.json").read_text("utf-8"))
+                    self.assertEqual(
+                        truth["planted"], base_truth["planted"],
+                        f"axis {name} changed what was planted")
+                    self.assertEqual(
+                        truth["must_not_fire"], base_truth["must_not_fire"],
+                        f"axis {name} changed a silence assertion")
+                    self.assertNotEqual(
+                        got["digest"], base["digest"],
+                        f"axis {name} did not change the evidence at all")
+        finally:
+            base_dir.cleanup()
+
     def test_no_two_scenarios_produce_the_same_case(self):
         """A scenario whose narrative silently stopped running would still
         generate a valid case -- the world builds either way. Identical

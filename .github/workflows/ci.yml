@@ -95,6 +95,14 @@ jobs:
           for seed in 2 3 42 4711; do
             python -m shellforge check --all --seed "$seed" --shellhound ../shellhound
           done
+      - name: Score along every hostile axis
+        working-directory: shellforge
+        # Each axis on its own over the whole catalogue: 19 pairings x 5
+        # shapes. An axis reshapes the evidence and leaves the ground truth
+        # alone, so this re-runs every existing assertion over a harder file
+        # -- a byte-order mark, a Latin-1 log, malformed lines between good
+        # ones, 677 clients, a database clock two hours out.
+        run: python -m shellforge check --all --hostile all --shellhound ../shellhound
       - name: Score at scale
         working-directory: shellforge
         # A quarter of a million log lines, rotated and gzipped. This is

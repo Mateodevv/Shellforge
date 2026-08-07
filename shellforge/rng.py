@@ -71,12 +71,26 @@ class Rng:
         return "".join(self._r.choice(alphabet) for _ in range(n))
 
     def ip(self, block: str) -> str:
-        """An address out of one of the documentation ranges of RFC 5737.
+        """An address out of a range reserved for exactly this.
 
         NEVER a real address. A test fixture that names a routable IP will
         eventually be pasted into a report, and then somebody gets accused of
         an intrusion because a generator needed a plausible number.
+
+        `visitor`, `attacker` and `noise` come from the three documentation
+        blocks of RFC 5737. Each is a /24, so each holds **254 addresses** --
+        which is fine for the handful of roles a scenario has and is not fine
+        for a crowd: asking for five hundred visitors out of a /24 quietly
+        returns two hundred and fifty, and the case then claims a scale it
+        does not have.
+
+        `crowd` therefore uses 198.18.0.0/15, reserved by RFC 2544 for
+        benchmarking and equally unroutable, which holds 131,072. It exists
+        only so "more clients than the actor list can show" can be true.
         """
+        if block == "crowd":
+            return (f"198.{self.randint(18, 19)}."
+                    f"{self.randint(0, 255)}.{self.randint(1, 254)}")
         base = {"visitor": "192.0.2", "attacker": "203.0.113",
                 "noise": "198.51.100"}[block]
         return f"{base}.{self.randint(1, 254)}"

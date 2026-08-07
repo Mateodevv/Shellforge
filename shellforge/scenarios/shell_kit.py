@@ -40,6 +40,8 @@ KIT = [
     ("webshell.eval_input", "class-loader.php"),
     ("webshell.var_func", "class-dispatch.php"),
     ("webshell.create_function", "legacy-callback.php"),
+    ("webshell.callback_input", "class-router.php"),
+    ("webshell.upload_dest", "upload-handler.php"),
     ("webshell.dropper", "media-sync.php"),
     ("webshell.preg_e", "template-filter.php"),
     ("webshell.chr_concat", "i18n-strings.php"),
@@ -77,9 +79,13 @@ def build(rng, site, scale: str = "small") -> Case:
         truth.plant(Planted(
             kind="file", ident=f"/{rel}",
             expect_rules=[rule_id],
+            # NAMED, not derived. `create_function` was HIGH until it was
+            # split and `callback_input` carved out of it; a set spelled as
+            # "everything except the obfuscation ones" would have quietly
+            # stayed wrong.
             expect_severity="high" if rule_id in {
                 "webshell.eval_input", "webshell.var_func",
-                "webshell.create_function", "webshell.dropper",
+                "webshell.callback_input", "webshell.dropper",
                 "webshell.preg_e"} else "medium",
             note=f"part of the kit; exists to trip {rule_id} and nothing "
                  f"else. Outside every upload directory, so the location "

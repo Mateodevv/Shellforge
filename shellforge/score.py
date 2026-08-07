@@ -182,6 +182,57 @@ def score(truth: dict, findings: list) -> Result:
     return result
 
 
+def check_clients(truth: dict, logindex_db: Path) -> dict:
+    """Compare the indexed client list against the addresses generated.
+
+    A SECOND ORACLE, FOR WHAT FINDINGS CANNOT SEE. Every assertion above is
+    about a finding, and a finding needs a rule to fire. A parser that drops
+    a line, or invents a client out of a stray byte, does neither: ordinary
+    visitor traffic produces no findings whether it survives or not, so the
+    whole class of "the index no longer describes the log" is invisible to
+    the rest of this file.
+
+    The client list is derived evidence and a statement about who touched the
+    server. So:
+
+        phantom   an address in the index that was never generated. The index
+                  is claiming somebody was there who was not.
+        missing   an address that was generated and did not arrive. Lines
+                  were lost, and nobody would notice which.
+
+    This reads `logindex.db`, which Shellhound derives from the logs and does
+    not archive. Absent or unreadable, the check is skipped and says so
+    rather than passing quietly.
+    """
+    path = Path(logindex_db)
+    if not path.exists():
+        return {"skipped": "no logindex.db"}
+    generated = set(truth.get("clients") or [])
+    if not generated:
+        return {"skipped": "ground truth records no client list"}
+    tolerated = set(truth.get("clients_tolerated") or [])
+    uri = f"file:{path.as_posix()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        table = None
+        for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"):
+            cols = [row[1] for row in conn.execute(f"PRAGMA table_info({name})")]
+            if "ip" in cols:
+                table = name
+                break
+        if table is None:
+            return {"skipped": "logindex.db has no client table"}
+        indexed = {row[0] for row in conn.execute(f"SELECT ip FROM {table}")}
+    finally:
+        conn.close()
+    return {
+        "phantom": sorted(indexed - generated - tolerated),
+        "missing": sorted(generated - indexed - tolerated),
+        "indexed": len(indexed), "generated": len(generated),
+    }
+
+
 def coverage(fired: set, all_rule_ids) -> dict:
     all_ids = set(all_rule_ids)
     return {
@@ -211,7 +262,34 @@ def shellhound_rule_ids(shellhound_path: Path | None = None):
     return {r["id"] for r in rules.catalogue()}
 
 
-def report(result: Result, truth: dict, cov: dict | None) -> str:
+def clients_report(clients: dict | None) -> list:
+    """The client-list section, or nothing when the check could not run."""
+    if not clients or clients.get("skipped"):
+        return []
+    out = []
+    if clients.get("phantom"):
+        out.append(f"PHANTOM CLIENTS -- {len(clients['phantom'])} address(es) "
+                   f"in the index that were never generated")
+        for ip in clients["phantom"][:8]:
+            out.append(f"  {ip!r}")
+        out.append("")
+    if clients.get("missing"):
+        out.append(f"LOST CLIENTS -- {len(clients['missing'])} address(es) "
+                   f"generated but not indexed; lines went missing")
+        for ip in clients["missing"][:8]:
+            out.append(f"  {ip}")
+        out.append("")
+    return out
+
+
+def clients_ok(clients: dict | None) -> bool:
+    if not clients or clients.get("skipped"):
+        return True
+    return not clients.get("phantom") and not clients.get("missing")
+
+
+def report(result: Result, truth: dict, cov: dict | None,
+           clients: dict | None = None) -> str:
     meta = f"{truth.get('scenario')} | seed {truth.get('seed')}"
     out = [f"SHELLFORGE SCORE -- {meta}", ""]
     planted_total = len(result.hits) + len(result.misses)
@@ -219,6 +297,11 @@ def report(result: Result, truth: dict, cov: dict | None) -> str:
                f"({len(result.hits)}/{planted_total} planted objects fully found)")
     out.append(f"  precision  {result.precision:6.1%}   "
                f"({len(result.false_positives)} findings about nothing planted)")
+    if clients and not clients.get("skipped"):
+        out.append(f"  clients    {clients['indexed']:>6}   "
+                   f"(of {clients['generated']} generated; "
+                   f"{len(clients['phantom'])} phantom, "
+                   f"{len(clients['missing'])} lost)")
     if cov:
         out.append(f"  coverage   {cov['ratio']:6.1%}   "
                    f"({len(cov['exercised'])}/"
@@ -279,7 +362,8 @@ def report(result: Result, truth: dict, cov: dict | None) -> str:
             out.append(f"  {rule}")
         out.append("")
 
-    out.append("PASS" if result.ok else "FAIL")
+    out += clients_report(clients)
+    out.append("PASS" if result.ok and clients_ok(clients) else "FAIL")
     return "\n".join(out)
 
 

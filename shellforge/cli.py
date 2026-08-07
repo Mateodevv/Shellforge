@@ -18,10 +18,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from shellforge import scenarios
+from shellforge import hostile, scenarios
 from shellforge.generate import generate
-from shellforge.score import (coverage, load_truth, read_findings, report,
-                              score, shellhound_rule_ids)
+from shellforge.score import (check_clients, clients_ok, coverage,
+                              load_truth, read_findings, report, score,
+                              shellhound_rule_ids)
 
 DEFAULT_SHELLHOUND = Path(__file__).resolve().parents[2] / "shellhound"
 
@@ -36,6 +37,12 @@ def _add_gen_args(parser):
                         choices=["apache", "nginx"])
     parser.add_argument("--rotate-days", type=int, default=0,
                         help="split the access log every N days; 0 = one file")
+    parser.add_argument(
+        "--hostile", default="",
+        help="comma-separated axes to reshape the evidence along, or `all`. "
+             "An axis changes the SHAPE of the evidence and never the ground "
+             "truth, so it re-runs the existing assertions over a harder "
+             f"file. Available: {', '.join(hostile.names())}")
     parser.add_argument(
         "--no-verify-readable", action="store_true",
         help="skip reading every generated file back. Only when you already "
@@ -71,15 +78,25 @@ def cmd_score(args) -> int:
     return 0 if result.ok else 1
 
 
+def _axes(raw: str):
+    """`--hostile` as a list. `all` means every axis, applied together."""
+    if not raw:
+        return []
+    if raw.strip() == "all":
+        return hostile.names()
+    return [a.strip() for a in raw.split(",") if a.strip()]
+
+
 def _run_one(args, scenario: str, workdir: Path, quiet: bool = False,
-             cms: str = ""):
+             cms: str = "", axes=()):
     """Generate, analyse and score one scenario. Returns (result, truth)."""
     from shellforge.runner import analyse
 
     summary = generate(
         scenario=scenario, cms=cms or args.cms, seed=args.seed,
         scale=args.scale, out=workdir, log_format=args.log_format,
-        rotate_days=args.rotate_days, verify=not args.no_verify_readable)
+        rotate_days=args.rotate_days, verify=not args.no_verify_readable,
+        hostile=axes)
     case_path = Path(summary["case_dir"])
     if not quiet:
         print(f"generated  {case_path.name}  "
@@ -98,7 +115,9 @@ def _run_one(args, scenario: str, workdir: Path, quiet: bool = False,
 
     truth = load_truth(case_path / "ground_truth.json")
     findings = read_findings(case_path / "shellhound-case" / "case.db")
-    return score(truth, findings), truth, case_path
+    clients = check_clients(truth,
+                            case_path / "shellhound-case" / "logindex.db")
+    return score(truth, findings), truth, case_path, clients
 
 
 def cmd_check(args) -> int:
@@ -109,12 +128,13 @@ def cmd_check(args) -> int:
     known = shellhound_rule_ids(args.shellhound)
     try:
         if not args.all:
-            result, truth, case_path = _run_one(args, args.scenario, workdir)
+            result, truth, case_path, clients = _run_one(
+                args, args.scenario, workdir, axes=_axes(args.hostile))
             cov = coverage(result.fired_rules, known) if known else None
-            print(report(result, truth, cov))
+            print(report(result, truth, cov, clients))
             if keep:
                 print(f"\ncase kept at {case_path}")
-            return 0 if result.ok else 1
+            return 0 if result.ok and clients_ok(clients) else 1
 
         # --- every scenario, with coverage summed over all of them ----------
         # COVERAGE IS ONLY MEANINGFUL IN AGGREGATE. Measured per case it says
@@ -127,30 +147,46 @@ def cmd_check(args) -> int:
         # writable directory -- which is the entire reason the world and the
         # narrative were separated.
         from shellforge.generate import WORLDS
-        pairs = [(scenario, cms)
+        if args.hostile.strip() == "all":
+            # EACH AXIS ON ITS OWN, plus the plain shape. Applying all four
+            # at once and watching it break tells you nothing: the value of
+            # an axis is that a failure has exactly one difference to explain.
+            shapes = [()] + [(a,) for a in hostile.names()]
+        else:
+            shapes = [tuple(_axes(args.hostile))]
+        pairs = [(scenario, cms, shape)
                  for cms in sorted(WORLDS)
-                 for scenario in scenarios.names(cms)]
+                 for scenario in scenarios.names(cms)
+                 for shape in shapes]
 
         fired: set = set()
         failed = []
-        print(f"{'scenario':<24} {'cms':<10} {'recall':>8} {'precision':>10} "
-              f"{'rules':>6}   result")
-        print("-" * 72)
-        for scenario, cms in pairs:
-            result, truth, _path = _run_one(args, scenario, workdir,
-                                            quiet=True, cms=cms)
+        wide = any(shape for _s, _c, shape in pairs)
+        head = f"{'scenario':<24} {'cms':<10}"
+        if wide:
+            head += f" {'shape':<14}"
+        print(head + f" {'recall':>8} {'precision':>10} {'rules':>6}   result")
+        print("-" * (72 + (15 if wide else 0)))
+        for scenario, cms, shape in pairs:
+            result, truth, _path, clients = _run_one(
+                args, scenario, workdir, quiet=True, cms=cms, axes=shape)
             fired |= result.fired_rules
-            status = "ok" if result.ok else "FAIL"
-            if not result.ok:
-                failed.append((f"{scenario} [{cms}]", result, truth))
-            print(f"{scenario:<24} {cms:<10} {result.recall:>7.1%} "
-                  f"{result.precision:>10.1%} "
-                  f"{len(result.fired_rules):>6}   {status}")
+            good = result.ok and clients_ok(clients)
+            status = "ok" if good else "FAIL"
+            label = f"{scenario} [{cms}]" + (f" +{'+'.join(shape)}"
+                                             if shape else "")
+            if not good:
+                failed.append((label, result, truth, clients))
+            row = f"{scenario:<24} {cms:<10}"
+            if wide:
+                row += f" {('+'.join(shape) or '-'):<14}"
+            print(row + f" {result.recall:>7.1%} {result.precision:>10.1%} "
+                        f"{len(result.fired_rules):>6}   {status}")
         print()
 
-        for label, result, truth in failed:
+        for label, result, truth, clients in failed:
             print(f"===== {label} =====")
-            print(report(result, truth, None))
+            print(report(result, truth, None, clients))
             print()
 
         if known:

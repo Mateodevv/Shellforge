@@ -184,6 +184,57 @@ WordPress. A scenario that names one is doing so deliberately —
 against Joomla would produce a case that could not have happened, so the
 registry refuses the pairing rather than generating it.
 
+## Hostile axes
+
+An axis reshapes **finished evidence**. `wp-upload-shell` describes an
+intrusion; whether the log arrived with a byte-order mark, in Latin-1, with
+six hundred clients in it, or from a server whose clock disagreed with the
+database's, is a property of the evidence and not of what happened. So the
+axes compose with every scenario and every profile.
+
+```bash
+python -m shellforge check --all --hostile all --shellhound ../shellhound
+```
+
+**The oracle is one sentence: the axis must not change the answer.** The
+ground truth is built before the axis is applied and stays exactly as it was,
+so `--hostile` needs no new assertions — it re-runs the existing ones over a
+harder file. Anything that drops out is a reader losing evidence rather than a
+detector disagreeing. And because each axis runs on its own, a failure has
+exactly one difference to explain.
+
+| Axis | What it does to the file |
+|---|---|
+| `encoding` | UTF-8 BOM, a genuinely Latin-1 log, CRLF line endings, a multi-kilobyte request line |
+| `broken-lines` | Truncated, field-short, NUL-bearing, undated and empty lines *between* good ones, plus an Apache error-log line that wandered in |
+| `many-actors` | 677 distinct clients, well past the 200-client cap. The attacker is one of them and is not the busiest |
+| `clock-skew` | Every database timestamp two hours ahead of the log's. Only the dump moves |
+
+### A second oracle: the client list
+
+Findings cannot see a reader that loses a line or invents a client — ordinary
+visitor traffic produces no findings either way. So the ground truth records
+**every address the generator emitted**, and the score compares it against the
+indexed client list:
+
+```
+clients       158   (of 157 generated; 1 phantom, 0 lost)
+```
+
+*phantom* is an address the index claims and nobody used; *lost* means lines
+went missing and nobody would notice which.
+
+### encoding found a live one
+
+`open_text_auto` opens logs with `encoding="utf-8"` rather than `utf-8-sig`,
+so a byte-order mark survives decoding as `﻿` at the head of the first
+line. It is not whitespace, and the Combined pattern reads the client with
+`^(\S+)` — so the first line is attributed to `﻿` plus the real address.
+
+Measured: **158 clients indexed where 157 exist**, one of them an address
+nobody used, and one real visitor's first request charged to it. Every log
+ever opened in a Windows editor carries that mark. The fix is one word.
+
 ## World profiles
 
 | | WordPress | Joomla |

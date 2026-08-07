@@ -41,6 +41,20 @@ class Case:
     modified: dict = field(default_factory=dict)
     #: Hunt patterns this case is meant to be searched with.
     hunt_patterns: list = field(default_factory=list)
+    # --- shape, set by the hostile axes (see shellforge/hostile.py) --------
+    #: Prepend a UTF-8 BOM to the access log.
+    log_bom: bool = False
+    #: Line ending the access log is written with.
+    log_newline: str = "\n"
+    #: Encoding the access log is written in. `latin-1` puts bytes in it that
+    #: a UTF-8 reader has to survive.
+    log_encoding: str = "utf-8"
+    #: Lines injected into the access log verbatim, interleaved with the real
+    #: ones. Malformed on purpose.
+    raw_log_lines: list = field(default_factory=list)
+    #: Seconds the DATABASE clock runs ahead of the log clock.
+    clock_skew: int = 0
+
     #: Paths to make unreadable AFTER writing and verifying them. POSIX only;
     #: see `generate.generate`. This is the only way to exercise the rule
     #: about a file the scanner could not open, and the only reason a case
