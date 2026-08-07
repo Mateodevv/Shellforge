@@ -174,6 +174,7 @@ exercising all 34 of Shellhound's rules.
 | `probe-wave` | both | Identical SQLi and traversal payloads, one address answered 200 and one answered 404. Outcome gating, both halves |
 | `false-guard` | both | A forged guard string in a comment. The documented limitation, pinned from both sides |
 | `ghost-shell` | both | Shell deleted before the copy was taken. **Reproduces a discrepancy** — see below |
+| `long-tail-admin` | both | No attack at all, for long enough that it looks like one. **Reproduces a scale-dependent false positive** — see below |
 | `clean-baseline` | both | A working site where nothing happened. Expectation: INFO about the scanners and nothing else |
 
 Most scenarios name no CMS at all, and that is the point of separating world
@@ -226,6 +227,33 @@ is `webshell.unreadable`, which needs a genuine filesystem read error:
 `chmod 000` on POSIX, and nothing a generator can rely on under Windows. The
 scenario plants it on POSIX and writes a note into the ground truth on
 Windows rather than quietly claiming coverage the platform does not have.
+
+### long-tail-admin reproduces a scale-dependent false positive
+
+`logs.login_flood` triggers on thirty login POSTs from one address;
+`logs.login_success` on thirty plus a 3xx. Neither counts within a time
+window, so the threshold is not a statement about behaviour — it is a
+statement about how long somebody kept their logs.
+
+One administrator, one office address, one login every working morning, each
+answered with the redirect a successful login produces:
+
+| | |
+|---|---|
+| after ~6 weeks | ~30 logins → flood. MEDIUM |
+| after ~9 weeks | ~46 logins → *possible successful brute-force*. **HIGH** |
+
+Nothing about the site changed and nobody attacked it. The case contains no
+attacker at all — clean webroot, untouched database, every probe answered 404
+— and carries a **second** administrator with identical habits but fewer days
+present, who stays silent. The two differ in nothing except how long they
+appear in the log.
+
+This was found by the scale test rather than by inspection: `--scale large`
+generates sixty days of traffic, and the site's own editor crossed the
+threshold. `common.plant_editor` now counts the logins it generated and
+predicts the consequence, so every scenario stays honest at every scale
+instead of flipping at one.
 
 ### joomla-helix3 reproduces a detection gap
 

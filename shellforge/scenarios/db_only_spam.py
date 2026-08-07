@@ -134,7 +134,7 @@ def build(rng, site, scale: str = "small") -> Case:
                 "ordinary POSTs; the payload never appears in a request line")
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "The webroot is untouched and the access log is unremarkable. If a "

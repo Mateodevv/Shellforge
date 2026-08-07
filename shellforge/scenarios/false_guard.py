@@ -125,7 +125,7 @@ def build(rng, site, scale: str = "small") -> Case:
                 f"GET /{disarmed}?cmd=id answered 200")
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "Three files in one upload directory: a shell with a forged guard, a "

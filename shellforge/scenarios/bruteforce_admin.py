@@ -125,7 +125,7 @@ def build(rng, site, scale: str = "small") -> Case:
         "falls inside the window the log says somebody was logging in.")
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "The webroot is untouched. If any file in this case produces a "

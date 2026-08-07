@@ -79,6 +79,7 @@ def register(name, cms=ALL_CMS):
 _MODULES = (
     "wp_upload_shell", "joomla_helix3", "bruteforce_admin", "db_only_spam",
     "shell_kit", "probe_wave", "ghost_shell", "false_guard", "clean_baseline",
+    "long_tail_admin",
 )
 
 

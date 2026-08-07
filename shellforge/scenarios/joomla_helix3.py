@@ -241,7 +241,7 @@ def build_rce(rng, site, scale: str = "small") -> Case:
     common.plant_warnings(truth, noisy_paths)
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "The exploit request produces NO finding, and must not: `index.php` "
@@ -307,7 +307,7 @@ def build_deface(rng, site, scale: str = "small") -> Case:
                "invent anything")
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "THE WEBROOT IS CLEAN. Not lightly touched -- byte-identical to a "

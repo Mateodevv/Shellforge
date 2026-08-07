@@ -209,7 +209,24 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
-### Vier Befunde aus dem Bau
+### Fünf Befunde aus dem Bau
+
+**Die Bruteforce-Regeln sind von der Loglänge abhängig, nicht vom Verhalten.**
+`logs.login_flood` zählt 30 Login-POSTs pro Adresse, `logs.login_success` 30
+plus ein 3xx — beide ohne Zeitfenster. Ein Administrator, der jeden
+Werktagmorgen einmal ein Login macht und jedes Mal den Redirect eines
+erfolgreichen Logins bekommt, überschreitet die Schwelle nach etwa sechs
+Wochen und wird nach neun Wochen als *possible successful brute-force* mit
+**HIGH** gemeldet. Am Standort hat sich nichts geändert; nur der Log ist
+länger. Gefunden hat das der Skalentest, nicht die Durchsicht: bei
+`--scale large` entstehen 60 Tage Traffic, und der eigene Redakteur des
+Falls kippte über die Schwelle. Das Szenario `long-tail-admin` reproduziert
+es absichtlich und bei jeder Skala, mit einem zweiten Administrator gleicher
+Gewohnheit und weniger Tagen, der still bleibt — die beiden unterscheiden
+sich in nichts als der Zeit, die sie im Log stehen. `common.plant_editor`
+zählt jetzt die erzeugten Logins und sagt die Folge voraus, statt bei einer
+Skala umzukippen.
+
 
 **`up.php.json` ist für alle drei Engines unsichtbar.** Helix3 hängt `.json`
 an den Layout-Namen an, aus `../../up.php` wird also `up.php.json` im Webroot.

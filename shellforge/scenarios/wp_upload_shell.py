@@ -257,7 +257,7 @@ def build(rng, site, scale: str = "small") -> Case:
                "command is a constant -- nothing here is request-driven")
 
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
 
     # --- the hunt pattern this case is meant to be searched with -----------

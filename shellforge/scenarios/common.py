@@ -125,12 +125,69 @@ def plant_scanners(truth, requests):
     return ips
 
 
-def plant_editor(truth, editor_ip):
-    truth.keep_quiet(
-        editor_ip,
-        rules=["logs.login_success", "logs.login_flood"],
-        reason="the editor logs in on most weekdays and is redirected each "
-               "time. One login is not a flood; the threshold is 30")
+#: The documented threshold of `logs.login_flood` and `logs.login_success`:
+#: thirty login POSTs from one address, plus a 3xx for the second rule.
+#:
+#: THIS IS AN EXPECTATION, NOT A DETECTOR. Shellforge does not decide who is
+#: flooding; it counts what it generated so the ground truth can predict what
+#: a correct run reports. Naming the number is the same kind of knowledge as
+#: naming a rule id, which `expect_rules` does on every line.
+LOGIN_THRESHOLD = 30
+
+
+def plant_editor(truth, editor_ip, requests=(), site=None):
+    """The site's own editor, and what happens to them on a long log.
+
+    A FINDING ABOUT SHELLHOUND, RECORDED RATHER THAN ENDORSED. The two
+    brute-force rules count login POSTs per ADDRESS with no time window, so
+    the threshold is a function of how long the log is rather than of how
+    anybody behaved. Six days of traffic: the editor signs in a handful of
+    times and stays quiet, as they should. Sixty days: the same person, same
+    office address, same one login per working morning, crosses thirty POSTs
+    and is reported as a *possible successful brute-force* at HIGH -- because
+    every one of those logins was answered with a redirect, which is exactly
+    what the rule looks for.
+
+    So this cannot be a fixed assertion either way. The ground truth counts
+    what was actually generated and states the consequence, which keeps every
+    scenario honest at every scale and makes the crossover visible instead of
+    turning it into a flaky test at `--scale large`.
+
+    `long-tail-admin` is the scenario that reproduces it on purpose.
+    """
+    from shellforge.truth import Planted
+    login_path = getattr(site, "login_path", None)
+    logins = [r for r in requests
+              if r.ip == editor_ip and r.method == "POST"
+              and (login_path is None or r.uri == login_path)]
+
+    if len(logins) < LOGIN_THRESHOLD:
+        truth.keep_quiet(
+            editor_ip,
+            rules=["logs.login_success", "logs.login_flood"],
+            reason=f"the editor signed in {len(logins)} times over the whole "
+                   f"log and was redirected each time. One login is not a "
+                   f"flood; the threshold is {LOGIN_THRESHOLD}")
+        return
+
+    truth.plant(Planted(
+        kind="client", ident=editor_ip,
+        expect_rules=["logs.login_flood", "logs.login_success"],
+        expect_severity="high",
+        note=f"THE SITE'S OWN EDITOR, reported as a possible successful "
+             f"brute-force. {len(logins)} logins over the length of this log, "
+             f"one per working morning, each answered with a redirect -- "
+             f"which is what the rule looks for. Nothing here is an attack. "
+             f"Recorded because it is what a correct run currently produces, "
+             f"not because it is the right answer"))
+    truth.note(
+        f"SCALE-DEPENDENT FALSE POSITIVE. `logs.login_flood` and "
+        f"`logs.login_success` count login POSTs per address with no time "
+        f"window, so their threshold of {LOGIN_THRESHOLD} is a function of "
+        f"how long the log is. This case's editor made {len(logins)} ordinary "
+        f"logins and is reported at HIGH. On a six-day log the same behaviour "
+        f"is silent. See the `long-tail-admin` scenario, which reproduces it "
+        f"deliberately and at any scale.")
 
 
 def warning_noise(rng, site, start: datetime, days: int, count=(4, 10)):

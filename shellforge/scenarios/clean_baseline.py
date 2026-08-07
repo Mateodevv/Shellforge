@@ -37,7 +37,7 @@ def build(rng, site, scale: str = "small") -> Case:
     case.requests = requests + common.scanner_noise(rng.derive("scanners"),
                                                     start, days)
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
 
     # No error log at all. A site that is not on fire does not need one to

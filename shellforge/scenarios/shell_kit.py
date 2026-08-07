@@ -188,7 +188,7 @@ def build(rng, site, scale: str = "small") -> Case:
     case.error_lines += noise
     common.plant_warnings(truth, noisy_paths)
     common.plant_scanners(truth, case.requests)
-    common.plant_editor(truth, editor_ip)
+    common.plant_editor(truth, editor_ip, case.requests, site)
     common.plant_core_silence(truth, site)
     truth.note(
         "Every file in the kit trips exactly one content rule. If one of them "
