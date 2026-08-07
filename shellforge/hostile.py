@@ -118,6 +118,47 @@ def clock_skew(case, rng):
         f"file is the TRUE one, on the log's clock.")
 
 
+# --- what the hoster actually wrote -----------------------------------------
+
+@axis("hoster-fields",
+      "the log carries Plesk's two trailing fields, the way a real shared "
+      "host writes it.")
+def hoster_fields(case, rng):
+    """Write the log in a format a hoster uses rather than the textbook one.
+
+    THIS IS THE AXIS THAT SHOULD HAVE EXISTED FIRST. Two real access logs
+    from different hosters were measured against what this generator emits,
+    and NEITHER was plain Combined:
+
+        hoster A   ... 200 18020 www.example.test "ref" "ua" "-"
+        hoster B   ... 200 -     "ref" "ua" "Traffic IN:820 OUT:3256" "ReqTime:0 sec"
+        generated  ... 200 19156 "ref" "ua"
+
+    A carries an unquoted vhost token between the size and the referer; B
+    carries two trailing quoted fields. Shellhound's `LOG_PATTERN` has an
+    explicit branch for each -- `(?:[^"\\s]\\S* )?` and `(?:\\s.*)?$` -- and
+    the comment beside them says these are years of real-webhost quirks and
+    that removing one "would silently drop exactly the attacker lines the
+    index exists to answer about".
+
+    Nothing generated here had ever exercised either branch. The most
+    load-bearing part of the parser was the one part the test data never
+    touched.
+
+    The axis picks the Plesk shape; `--log-format vhost` writes the other,
+    and `check --all --hostile all` covers both because the axis runs on
+    every scenario.
+    """
+    case.log_format = "plesk"
+    case.truth.note(
+        "THE LOG IS WRITTEN THE WAY A SHARED HOST WRITES IT: Combined plus "
+        "`\"Traffic IN:… OUT:…\"` and `\"ReqTime:… sec\"`. Measured against "
+        "real evidence -- neither of two real hoster logs was plain "
+        "Combined, and the parser branch that handles this had no test data "
+        "behind it. Not one finding may change: the trailing fields are not "
+        "part of any rule.")
+
+
 # --- encoding ---------------------------------------------------------------
 
 @axis("encoding",

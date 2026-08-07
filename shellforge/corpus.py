@@ -64,6 +64,56 @@ BROWSER_UAS = [
     "Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36",
 ]
 
+#: HOW REAL USER-AGENT DIVERSITY ARISES. Two real logs carried 134 and 361
+#: distinct agents across a single day; this generator carried twelve. The
+#: difference is not twelve different browsers -- it is one browser at forty
+#: patch levels, because everybody updates on their own schedule. So the
+#: variety is generated from version numbers rather than written out, which
+#: is both how it happens and the only way to reach the real spread.
+_UA_TEMPLATES = [
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, "
+     "like Gecko) Chrome/{c} Safari/537.36", "chrome"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+     "(KHTML, like Gecko) Version/{s} Safari/605.1.15", "safari"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:{f}) Gecko/20100101 "
+     "Firefox/{f}", "firefox"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS {i} like Mac OS X) "
+     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{s} Mobile/15E148 "
+     "Safari/604.1", "ios"),
+    ("Mozilla/5.0 (Linux; Android {a}; {d}) AppleWebKit/537.36 (KHTML, like "
+     "Gecko) Chrome/{c} Mobile Safari/537.36", "android"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, "
+     "like Gecko) Chrome/{c} Safari/537.36 Edg/{c}", "edge"),
+]
+
+_ANDROID_DEVICES = ["SM-A546B", "SM-S911B", "Pixel 8", "Pixel 7a",
+                    "moto g84 5G", "2201117TY", "CPH2451"]
+
+
+def browser_agents(rng, count: int = 320):
+    """`count` distinct plausible agents, mostly one browser at many versions.
+
+    Deterministic given the generator: the same seed yields the same set.
+    """
+    out = set()
+    guard = 0
+    while len(out) < count and guard < count * 20:
+        guard += 1
+        template, kind = rng.weighted([
+            (_UA_TEMPLATES[0], 40), (_UA_TEMPLATES[4], 22),
+            (_UA_TEMPLATES[1], 12), (_UA_TEMPLATES[3], 12),
+            (_UA_TEMPLATES[2], 8), (_UA_TEMPLATES[5], 6)])
+        out.add(template.format(
+            c=f"{rng.randint(118, 131)}.0.{rng.randint(5000, 6900)}."
+              f"{rng.randint(10, 220)}",
+            s=f"{rng.randint(15, 18)}.{rng.randint(0, 6)}",
+            f=f"{rng.randint(115, 133)}.0",
+            i=f"{rng.randint(15, 18)}_{rng.randint(0, 7)}",
+            a=str(rng.randint(11, 15)),
+            d=rng.choice(_ANDROID_DEVICES)))
+    return sorted(out)
+
+
 CRAWLER_UAS = [
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
     "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",

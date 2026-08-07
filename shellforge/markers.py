@@ -105,6 +105,17 @@ GENUINE_CORE = ("<?php\nif (!defined('ABSPATH')) { exit; }\n"
 #: extension is the only thing that fires.
 INERT_BODY = "<?php\necho 1;\n"
 
+#: `webshell.no_php` (MEDIUM). A `.php` file with no PHP in it at all -- an
+#: HTML page served under the site's own address. What a phishing page dropped
+#: into a webroot looks like, and what a defacement looks like when it is
+#: filed as PHP so the directory index does not give it away.
+NO_PHP = ('<!DOCTYPE html>\n<html lang="de"><head>\n'
+          '<meta charset="utf-8"><title>Kontopruefung</title>\n'
+          '</head><body>\n'
+          '<h1>Bitte bestaetigen Sie Ihre Daten</h1>\n'
+          '<p>Diese Seite ist ein inerter Marker und tut nichts.</p>\n'
+          '</body></html>\n')
+
 #: `webshell.php_in_image` (HIGH). Real PNG magic so a file-type check sees an
 #: image, with a PHP tag behind it.
 PHP_IN_IMAGE = b"\x89PNG\r\n\x1a\n" + b"<?php echo 2; ?>\n"
@@ -158,6 +169,7 @@ def php_marker(rule_id: str) -> str:
         "webshell.hex_octal": HEX_OCTAL,
         "webshell.standalone_exec": STANDALONE_EXEC,
         "webshell.double_ext": INERT_BODY,
+        "webshell.no_php": NO_PHP,
     }
     if rule_id not in table:
         raise KeyError(f"no marker for {rule_id!r}")

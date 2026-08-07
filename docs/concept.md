@@ -209,6 +209,29 @@ Generator verlassen kann. Das Szenario pflanzt sie unter POSIX und schreibt
 unter Windows eine Notiz in die Ground Truth, statt eine Abdeckung zu
 behaupten, die die Plattform nicht hat.
 
+### Der Realismus war eine Behauptung, keine Messung
+
+Gegen zwei echte Hoster-Logs verglichen (nur Statistik; nichts davon liegt im
+Repo und wird es nie): der Generator verlor auf fast jeder Achse. Median
+Requests je Client 21 statt 1–2, kein einziger Client nur einmal gesehen
+statt 32–53 %, zwölf User-Agents statt 230–680, 14 % statische Assets statt
+45–48 %, 0,1 % Query-Strings statt 22–36 %, und ein Verhältnis von lautester
+zu leisester Stunde von **204×** statt 6–9×, weil nachts gar nichts erzeugt
+wurde.
+
+Am schwersten wog: **keiner der beiden echten Logs war reines Combined.** Der
+eine trug ein unquotiertes vhost-Token, der andere Plesks zwei Trailer.
+Shellhounds `LOG_PATTERN` hat für beide einen eigenen Zweig — mit dem
+Kommentar, das seien „years of real-webhost quirks" und jede entfernte davon
+würde „silently drop exactly the attacker lines the index exists to answer
+about". Genau diese beiden Zweige hatte Shellforge nie berührt.
+
+Behoben: neue Achse `hoster-fields`, Formate `vhost` und `plesk`, ein
+Sitzungsmodell mit Asset-Kaskaden, eine eigene Population von
+Einmal-Adressen ohne Referer, Nachtboden, `-`-Größen, HEAD/OPTIONS und
+429/403/500. Alle Werte liegen jetzt in der Spanne der beiden echten Fälle.
+Recall und Precision ändert das nicht — die messen, was sie messen.
+
 ### Acht Befunde aus dem Bau
 
 **Bei CVE-2015-1579 hat das Outcome-Gating nichts zu greifen.** `admin-ajax.php`

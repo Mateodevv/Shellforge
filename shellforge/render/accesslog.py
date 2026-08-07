@@ -30,18 +30,26 @@ class Request:
     method: str
     uri: str
     status: int
-    size: int
+    #: Bytes sent, or `None` for the `-` a server writes when it does not
+    #: know. MEASURED AT 12-13% OF LINES in two real logs from different
+    #: hosters, and on one of them it appears on `200` responses too -- so
+    #: "unknown" is a third state and not a synonym for zero.
+    size: object
     agent: str
     referer: str = "-"
 
     def sort_key(self):
         return (self.when, self.ip, self.uri)
 
+    @property
+    def size_field(self) -> str:
+        return "-" if self.size is None else str(self.size)
+
 
 def apache_combined(req: Request) -> str:
     stamp = req.when.strftime(APACHE_TIME)
     return (f'{req.ip} - - [{stamp}] "{req.method} {req.uri} HTTP/1.1" '
-            f'{req.status} {req.size} "{req.referer}" "{req.agent}"\n')
+            f'{req.status} {req.size_field} "{req.referer}" "{req.agent}"\n')
 
 
 def nginx_combined(req: Request) -> str:
@@ -50,10 +58,49 @@ def nginx_combined(req: Request) -> str:
     # parser change can be tested against the format it was not written for.
     stamp = req.when.strftime(APACHE_TIME)
     return (f'{req.ip} - - [{stamp}] "{req.method} {req.uri} HTTP/1.1" '
-            f'{req.status} {req.size} "{req.referer}" "{req.agent}"\n')
+            f'{req.status} {req.size_field} "{req.referer}" "{req.agent}"\n')
 
 
-FORMATS = {"apache": apache_combined, "nginx": nginx_combined}
+#: The site the line belongs to, written UNQUOTED between the size and the
+#: referer. Apache emits it under `%v` on any host that keeps one log for
+#: several sites, which is most shared hosting.
+VHOST = "www.example.test"
+
+
+def apache_vhost(req: Request) -> str:
+    """Combined with a bare vhost token, plus a trailing quoted field.
+
+    MEASURED, NOT INVENTED. This is the exact shape one of the two real logs
+    used: `… 200 18020 <vhost> "referer" "user agent" "-"`. Shellhound's
+    `LOG_PATTERN` carries `(?:[^"\\s]\\S* )?` for precisely this token, and
+    until now nothing generated here ever exercised that branch -- the one
+    the comment beside it calls out as the sort of quirk whose removal
+    "would silently drop exactly the attacker lines the index exists to
+    answer about".
+    """
+    stamp = req.when.strftime(APACHE_TIME)
+    return (f'{req.ip} - - [{stamp}] "{req.method} {req.uri} HTTP/1.1" '
+            f'{req.status} {req.size_field} {VHOST} '
+            f'"{req.referer}" "{req.agent}" "-"\n')
+
+
+def plesk(req: Request) -> str:
+    """Combined plus Plesk's two trailing fields.
+
+    Also measured: `… "referer" "user agent" "Traffic IN:820 OUT:3256"
+    "ReqTime:0 sec"`. Handled by `LOG_PATTERN`'s `(?:\\s.*)?$`, and likewise
+    never generated here before.
+    """
+    stamp = req.when.strftime(APACHE_TIME)
+    inb = 200 + len(req.uri) + len(req.agent)
+    outb = 165 if req.size is None else req.size + 165
+    return (f'{req.ip} - - [{stamp}] "{req.method} {req.uri} HTTP/1.1" '
+            f'{req.status} {req.size_field} "{req.referer}" "{req.agent}" '
+            f'"Traffic IN:{inb} OUT:{outb}" "ReqTime:0 sec"\n')
+
+
+FORMATS = {"apache": apache_combined, "nginx": nginx_combined,
+           "vhost": apache_vhost, "plesk": plesk}
 
 
 #: The bytes a Windows editor puts at the head of a file it saved as UTF-8.

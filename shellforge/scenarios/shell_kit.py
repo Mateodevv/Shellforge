@@ -47,6 +47,7 @@ KIT = [
     ("webshell.chr_concat", "i18n-strings.php"),
     ("webshell.goto", "route-table.php"),
     ("webshell.hex_octal", "charmap.php"),
+    ("webshell.no_php", "kontoprufung.php"),
 ]
 
 

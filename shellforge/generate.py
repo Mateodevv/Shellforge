@@ -110,7 +110,8 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     webroot.write(case_dir / "reference", clean, verify=verify)
 
     log_files = accesslog.write(case_dir / "logs", case.requests,
-                                fmt=log_format, rotate_days=rotate_days,
+                                fmt=case.log_format or log_format,
+                                rotate_days=rotate_days,
                                 bom=case.log_bom, newline=case.log_newline,
                                 encoding=case.log_encoding,
                                 raw_lines=case.raw_log_lines)

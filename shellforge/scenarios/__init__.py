@@ -42,6 +42,8 @@ class Case:
     #: Hunt patterns this case is meant to be searched with.
     hunt_patterns: list = field(default_factory=list)
     # --- shape, set by the hostile axes (see shellforge/hostile.py) --------
+    #: Overrides --log-format when an axis sets it.
+    log_format: str = ""
     #: Prepend a UTF-8 BOM to the access log.
     log_bom: bool = False
     #: Line ending the access log is written with.

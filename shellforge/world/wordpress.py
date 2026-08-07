@@ -282,6 +282,21 @@ def build(rng, scale: str = "small") -> Site:
     theme_slug, theme_name, theme_ver = rng.choice(corpus.THEMES)
     site.theme = (theme_slug, theme_name, theme_ver)
     site.theme_dir = f"wp-content/themes/{theme_slug}"
+    site.assets = [
+        f"/wp-content/themes/{theme_slug}/style.css",
+        f"/wp-content/themes/{theme_slug}/assets/js/main.js",
+        f"/wp-content/themes/{theme_slug}/assets/css/blocks.css",
+        "/wp-includes/js/jquery/jquery.min.js",
+        "/wp-includes/js/jquery/jquery-migrate.min.js",
+        "/wp-includes/css/dist/block-library/style.min.css",
+        "/wp-content/uploads/2025/11/header@2x.jpg",
+        "/wp-content/uploads/2025/09/team-01.jpg",
+        "/wp-content/uploads/2025/09/team-02.jpg",
+        "/wp-content/uploads/2026/01/logo.png",
+        "/wp-content/uploads/2025/12/galerie-04.jpg",
+        f"/wp-content/themes/{theme_slug}/assets/fonts/inter.woff2",
+        "/favicon.ico",
+    ]
     site.add(f"wp-content/themes/{theme_slug}/style.css",
              _theme_style(theme_name, theme_ver))
     for part in ("index", "header", "footer", "functions", "single", "page",

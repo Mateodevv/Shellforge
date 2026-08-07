@@ -383,6 +383,20 @@ def build(rng, scale: str = "small") -> Site:
     tpl_dir, tpl_name, tpl_ver = rng.choice(corpus.JOOMLA_TEMPLATES)
     site.theme = (tpl_dir, tpl_name, tpl_ver)
     site.theme_dir = f"templates/{tpl_dir}"
+    site.assets = [
+        f"/templates/{tpl_dir}/css/template.css",
+        f"/templates/{tpl_dir}/css/presets/preset1.css",
+        f"/templates/{tpl_dir}/js/main.js",
+        "/media/system/js/core.js",
+        "/media/vendor/jquery/js/jquery.min.js",
+        "/media/system/css/joomla-fontawesome.min.css",
+        "/images/banner/header-2025.jpg",
+        "/images/galerie/werkstatt-03.jpg",
+        "/images/galerie/team-11.jpg",
+        "/images/logo.png",
+        f"/templates/{tpl_dir}/fonts/roboto.woff2",
+        "/favicon.ico",
+    ]
     site.add(f"templates/{tpl_dir}/templateDetails.xml",
              _manifest(tpl_name, tpl_ver, "template", "index"))
     site.add(f"templates/{tpl_dir}/index.php",

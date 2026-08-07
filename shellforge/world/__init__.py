@@ -92,6 +92,10 @@ class Site:
     #: Shellhound has no way to recognise one for this CMS, which is itself a
     #: fact a scenario has to be able to state.
     authenticated_area: str = ""
+    #: The static files a single page view drags along. Measured: real logs
+    #: are 45-48% .css/.js/.jpg/.png, because one page pulls twenty of them.
+    #: A generator that only requests pages produces a log no browser made.
+    assets: list = field(default_factory=list)
     #: Where the active theme/template lives, webroot-relative.
     theme_dir: str = ""
     #: A genuine core file with a bootstrap guard and nothing executable --

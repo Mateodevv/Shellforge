@@ -255,6 +255,7 @@ exactly one difference to explain.
 
 | Axis | What it does to the file |
 |---|---|
+| `hoster-fields` | Writes the log the way a shared host does — Combined plus Plesk's `"Traffic IN:… OUT:…"` and `"ReqTime:… sec"`. See *Calibrated against real evidence* below |
 | `encoding` | UTF-8 BOM, a genuinely Latin-1 log, CRLF line endings, a multi-kilobyte request line |
 | `broken-lines` | Truncated, field-short, NUL-bearing, undated and empty lines *between* good ones, plus an Apache error-log line that wandered in |
 | `many-actors` | 677 distinct clients, well past the 200-client cap. The attacker is one of them and is not the busiest |
@@ -284,6 +285,52 @@ line. It is not whitespace, and the Combined pattern reads the client with
 Measured: **158 clients indexed where 157 exist**, one of them an address
 nobody used, and one real visitor's first request charged to it. Every log
 ever opened in a Windows editor carries that mark. The fix is one word.
+
+## Calibrated against real evidence
+
+The generated logs were compared with two real hoster access logs from
+unrelated incidents. Statistics only — nothing from them is in this
+repository, and none of it ever will be. The first comparison was
+uncomfortable:
+
+| | real A / real B | before | now |
+|---|---|---|---|
+| trailing fields | vhost + 3 quoted / 4 quoted | 2 quoted | all three shapes |
+| size field is `-` | 12.1% / 13.0% | 0% | 15% |
+| size median | 18,020 / 4,024 | 19,156 | 17,407 |
+| requests per client (median) | 2 / 1 | 21 | 1 |
+| clients seen exactly once | 32% / 53% | 0% | 56% |
+| distinct user agents | 680 / 230 | 12 | 327 |
+| URIs with a query | 21.6% / 35.6% | 0.1% | 34% |
+| static assets | 45–48% | 14% | ~53% |
+| referer set | 66.5% / 57.6% | 37% | 67% |
+| busiest hour ÷ quietest | 8.8× / 6.1× | **204×** | 6–8× |
+| methods | GET, POST, HEAD, OPTIONS | GET, POST | all four |
+| statuses | incl. 429, 403, 500 | five kinds | incl. all |
+
+Three of those mattered more than the rest:
+
+**Neither real log was plain Combined.** One carried an unquoted vhost token
+between the size and the referer; the other carried Plesk's two trailing
+fields. Shellhound's `LOG_PATTERN` has an explicit branch for each, with a
+comment calling them years of real-webhost quirks whose removal "would
+silently drop exactly the attacker lines the index exists to answer about" —
+and nothing generated here had ever exercised either. The most load-bearing
+part of the parser was the one part the test data never touched.
+
+**The long tail was missing entirely.** Half of all clients in a real log
+appear exactly once, and together they account for only 2–7% of the lines. A
+session model cannot produce that, because a session is a browser and a
+browser fetches a dozen files. It needed a separate population of
+single-request addresses — link-followers, feed readers, uptime probes — 90%
+of which carry no referer.
+
+**The night floor was zero.** Traffic ran 06:00–22:00 and stopped, giving a
+busiest-to-quietest ratio of 204× where reality is 6–9×. Any quiet-window
+reasoning would have looked flawless here and failed in the field.
+
+None of this changes recall or precision — those measure what they measure.
+What it changes is whether "realistic" was a claim or a measurement.
 
 ## World profiles
 
