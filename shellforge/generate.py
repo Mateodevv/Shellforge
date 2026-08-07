@@ -75,6 +75,19 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
     case_dir.mkdir(parents=True, exist_ok=True)
 
     # --- evidence -----------------------------------------------------------
+    # GIVE BACK THE RIGHTS BEFORE WRITING. A previous run into this same
+    # directory -- which is exactly what `evolve` does -- left the unreadable
+    # plants at mode 0, and rewriting one then fails with EACCES. Windows
+    # ignores the chmod entirely, so this only ever breaks on POSIX, which is
+    # to say: it only ever breaks in CI.
+    for rel in case.unreadable_paths:
+        target = case_dir / "webroot" / rel
+        if target.exists():
+            try:
+                os.chmod(target, 0o644)
+            except OSError:
+                pass
+
     digests = webroot.write(case_dir / "webroot", case.files, verify=verify)
 
     # Permissions come off AFTER the verification pass, never before: the
