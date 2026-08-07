@@ -247,14 +247,23 @@ def build_rce(rng, site, scale: str = "small") -> Case:
             status=200, size=rng.randint(40, 700), agent=common.QUIET_UA))
     truth.plant(Planted(
         kind="client", ident=attacker,
-        expect_rules=["logs.upload_php", "logs.cms_dir_php"],
+        expect_rules=["logs.upload_php"],
+        # TOLERATED, NOT EXPECTED, and the distinction is about versions
+        # rather than about confidence. `logs.cms_dir_php` is recent; CI
+        # checks out SHELLHOUND's main at the moment it runs, so a rule added
+        # there minutes earlier -- or minutes later -- decides whether a hard
+        # expectation holds. Coverage counts what FIRED, so tolerating it
+        # still credits the rule wherever it exists, and the case does not go
+        # red against a version that predates it. A rule that has settled
+        # belongs in `expect_rules`.
+        tolerate_rules=["logs.cms_dir_php"],
         expect_severity="high",
-        note="two separate log rules catch this intrusion: the shell in the "
-             "images tree (upload_php) and the loose PHP file directly in "
-             "`components/` (cms_dir_php, where the CMS ships nothing at "
-             "that depth). Requests for `up.php.json` at the webroot root "
-             "produce neither -- that path carries no upload segment and is "
-             "not at extension depth"))
+        note="two separate log rules catch this intrusion where they exist: "
+             "the shell in the images tree (upload_php) and the loose PHP "
+             "file directly in `components/` (cms_dir_php, where the CMS "
+             "ships nothing at that depth). Requests for `up.php.json` at "
+             "the webroot root produce neither -- that path carries no "
+             "upload segment and is not at extension depth"))
     truth.event(t0 + timedelta(minutes=3), attacker, "use_shell",
                 f"GET /{DROPPED}?cmd=... answered 200")
 
