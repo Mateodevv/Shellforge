@@ -334,7 +334,36 @@ def plant_scanners(truth, requests):
 LOGIN_THRESHOLD = 30
 
 
-def login_rules_for(site, login_count: int):
+#: The window the burst is measured over: 24 hours.
+BURST_WINDOW = 86400
+
+
+def busiest_window(requests, ip, login_path):
+    """The most login POSTs this address made inside any 24 hours.
+
+    THE DISCRIMINATOR SHELLHOUND GAINED, and the reason `long-tail-admin`
+    stopped expecting a break-in. `logs.login_success` no longer fires on the
+    count alone: a flood spread over nine weeks is somebody turning up for
+    work, and only a burst looks like guessing. Measured in the scenarios
+    that argued for it, the operators peaked at 8 and 10 login POSTs in their
+    busiest day; the intruder reached 70 inside an hour.
+
+    Computed here rather than assumed, because a scenario's own idea of
+    whether it generated a burst drifts from what it actually generated --
+    which is the failure this repository exists to catch elsewhere.
+    """
+    times = sorted(r.when.timestamp() for r in requests
+                   if r.ip == ip and r.method == "POST"
+                   and (login_path is None or r.uri == login_path))
+    best = start = 0
+    for end, t in enumerate(times):
+        while t - times[start] >= BURST_WINDOW:
+            start += 1
+        best = max(best, end - start + 1)
+    return best
+
+
+def login_rules_for(site, login_count: int, burst: int = 0):
     """Which brute-force rules a client with this many logins should produce.
 
     TWO CONDITIONS, AND THE SECOND IS CMS-DEPENDENT.
@@ -361,7 +390,12 @@ def login_rules_for(site, login_count: int):
     if login_count < LOGIN_THRESHOLD:
         return []
     rules = ["logs.login_flood"]
-    if site is not None and site.authenticated_area:
+    # A BURST AS WELL AS A COUNT, since SHELLHOUND gained the window this
+    # repository asked for: `admin_ok` says somebody got in and cannot say
+    # who, and the site's own administrator gets in every working morning.
+    # Only a burst distinguishes guessing from arriving at work.
+    if (site is not None and site.authenticated_area
+            and burst >= LOGIN_THRESHOLD):
         rules.append("logs.login_success")
     return rules
 
@@ -380,7 +414,8 @@ def plant_editor(truth, editor_ip, requests=(), site=None):
     logins = [r for r in requests
               if r.ip == editor_ip and r.method == "POST"
               and (login_path is None or r.uri == login_path)]
-    rules = login_rules_for(site, len(logins))
+    burst = busiest_window(requests, editor_ip, login_path)
+    rules = login_rules_for(site, len(logins), burst)
 
     if not rules:
         truth.keep_quiet(
@@ -402,15 +437,16 @@ def plant_editor(truth, editor_ip, requests=(), site=None):
     if "logs.login_success" not in rules:
         truth.keep_quiet(
             editor_ip, rules=["logs.login_success"],
-            reason="no 2xx from a recognised authenticated backend area, so "
-                   "the flood stays a flood. On this CMS that is not a "
-                   "judgement about the traffic -- see the note")
+            reason=f"{len(logins)} logins over the whole log but only {burst} "
+                   f"in the busiest 24 hours -- somebody turning up for work, "
+                   f"not somebody guessing. The flood stays a flood")
     truth.note(
-        f"SCALE-DEPENDENT THRESHOLD. `logs.login_flood` counts login POSTs "
-        f"per address with no time window, so {LOGIN_THRESHOLD} is a function "
-        f"of how long the log is. This editor made {len(logins)} ordinary "
-        f"logins. On a six-day log the same behaviour is silent. See "
-        f"`long-tail-admin`.")
+        f"`logs.login_flood` still counts {LOGIN_THRESHOLD} login POSTs with "
+        f"no window, so this editor's {len(logins)} ordinary logins reach it "
+        f"on a long log. `logs.login_success` no longer follows: it now wants "
+        f"a burst, and the busiest 24 hours here held {burst}. That is the "
+        f"right shape -- the flood is a fact about the log's length, the "
+        f"break-in claim is a fact about behaviour.")
 
 
 def warning_noise(rng, site, start: datetime, days: int, count=(4, 10)):

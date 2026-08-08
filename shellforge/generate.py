@@ -117,7 +117,8 @@ def generate(*, scenario: str, cms: str = "wordpress", seed: int = 1,
                                 raw_lines=case.raw_log_lines)
     if case.error_lines:
         errorlog.write(case_dir / "logs", case.error_lines)
-    sqldump.write(case_dir / "dump.sql", site, extra_rows=case.extra_rows)
+    sqldump.write(case_dir / "dump.sql", site, fmt=case.dump_format,
+                  extra_rows=case.extra_rows)
 
     # --- ground truth -------------------------------------------------------
     # Digests are filled in AFTER writing, from what actually landed on disk.

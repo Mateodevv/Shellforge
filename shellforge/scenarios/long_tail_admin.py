@@ -116,7 +116,12 @@ def build(rng, site, scale: str = "small") -> Case:
             when=start + timedelta(days=2, hours=9), ip=admin_ip,
             method="GET", uri=site.authenticated_area, status=200,
             size=19800, agent=agent))
-    rules = common.login_rules_for(site, count)
+    # One login per working morning: the busiest 24 hours hold one or
+    # two. That is the number SHELLHOUND now reads, and the reason
+    # this scenario no longer expects a break-in finding.
+    burst = common.busiest_window(case.requests, admin_ip,
+                                  site.login_path)
+    rules = common.login_rules_for(site, count, burst)
     truth.plant(Planted(
         kind="client", ident=admin_ip,
         expect_rules=rules,

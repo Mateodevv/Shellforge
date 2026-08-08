@@ -56,9 +56,15 @@ JEXEC = "defined('_JEXEC') or die;\n"
 SCHEMA = {
     "users": Table(
         suffix="users",
+        # THE REAL ORDER, taken from a live installation: seventeen columns,
+        # not fourteen. `otpKey`, `otep` and `authProvider` were missing here.
+        # Positions 0-8 are what Shellhound reads by position and were already
+        # right, so nothing was broken -- but a schema that is only right as
+        # far as anybody looks is a schema waiting to be wrong.
         columns=["id", "name", "username", "email", "password", "block",
                  "sendEmail", "registerDate", "lastvisitDate", "activation",
-                 "params", "lastResetTime", "resetCount", "requireReset"],
+                 "params", "lastResetTime", "resetCount", "otpKey", "otep",
+                 "requireReset", "authProvider"],
         ddl="""CREATE TABLE `{t}` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` varchar(400) NOT NULL DEFAULT '',
@@ -73,7 +79,10 @@ SCHEMA = {
   `params` text NOT NULL,
   `lastResetTime` datetime DEFAULT NULL,
   `resetCount` int(11) NOT NULL DEFAULT '0',
+  `otpKey` varchar(1000) NOT NULL DEFAULT '',
+  `otep` varchar(1000) NOT NULL DEFAULT '',
   `requireReset` tinyint(4) NOT NULL DEFAULT '0',
+  `authProvider` varchar(100) NOT NULL DEFAULT '',
   PRIMARY KEY (`id`),
   KEY `idx_name` (`name`(100))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"""),
@@ -199,7 +208,10 @@ def account_rows(site) -> dict:
             "params": "",
             "lastResetTime": None,
             "resetCount": 0,
+            "otpKey": "",
+            "otep": "",
             "requireReset": 0,
+            "authProvider": "",
         })
         mapping.append({"user_id": index,
                         "group_id": ROLE_GROUP.get(account.role, 2)})

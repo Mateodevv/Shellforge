@@ -220,11 +220,15 @@ def build(rng, scale: str = "small") -> Site:
                      "/wp-admin/post.php", "/wp-admin/users.php",
                      "/wp-admin/user-new.php", "/wp-admin/plugin-install.php",
                      "/wp-admin/options-general.php"],
-        # DELIBERATELY EMPTY. Shellhound's AUTHENTICATED_AREA_RE is
-        # `/administrator/index.php?...option=com_...` -- Joomla's URL shape
-        # and nothing else. No WordPress admin URL matches it, so there is no
-        # value that could go here honestly. See the note in bruteforce-admin.
-        authenticated_area="",
+        # NO LONGER EMPTY. It was, because SHELLHOUND's authenticated-area
+        # expression only knew Joomla's URL shape and `logs.login_success`
+        # could not fire on a WordPress case at all. That gap was reported and
+        # closed: `WP_AUTHENTICATED_AREA_RE` now matches a `.php` DIRECTLY
+        # under `/wp-admin/`, excluding `admin-ajax.php` and `admin-post.php`
+        # -- which are reachable without a session -- and excluding anything a
+        # directory deeper, so the login page's own stylesheet cannot be read
+        # as proof that the password was guessed.
+        authenticated_area="/wp-admin/users.php",
         guarded_core="/wp-includes/functions.php",
         language_dir="wp-content/languages",
         quiet_upload_files=["wp-content/uploads/.htaccess",

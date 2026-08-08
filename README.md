@@ -394,7 +394,16 @@ is `webshell.unreadable`, which needs a genuine filesystem read error:
 scenario plants it on POSIX and writes a note into the ground truth on
 Windows rather than quietly claiming coverage the platform does not have.
 
-### bruteforce-admin reproduces a detection gap on WordPress
+### Three of these were fixed while the calibration was running
+
+`logs.login_success` could not fire on WordPress; the login-flood threshold
+measured the length of the log; and a `-` in the size column was read as zero.
+All three were reported from here, all three were fixed in Shellhound during
+this work, and Shellforge went red on each — naming the assertion that had
+stopped holding rather than saying something broke. The scenarios now encode
+the new behaviour, and the sections below are kept for what they explain.
+
+### bruteforce-admin: how the WordPress gap looked
 
 `logs.login_success` — the only HIGH log rule about a successful break-in —
 needs a flood **plus** a 2xx from the authenticated backend. That second
@@ -411,8 +420,10 @@ The scenario runs on both profiles and asserts the difference: on Joomla the
 intruder produces both rules; on WordPress the ground truth expects the flood
 and explicitly forbids the success, with the reason attached.
 
-The natural WordPress analogue would be `/wp-admin/` excluding
-`admin-ajax.php` and `admin-post.php`, which are reachable without a session.
+**Fixed.** `WP_AUTHENTICATED_AREA_RE` now matches a `.php` directly under
+`/wp-admin/`, excluding `admin-ajax.php` and `admin-post.php` — and, better
+than suggested, excluding anything a directory deeper as well, so the login
+page's own stylesheet cannot be read as proof the password was guessed.
 
 ### revslider-lfi: the status code cannot separate them
 
@@ -467,12 +478,12 @@ attacker at all — clean webroot, untouched database, every probe answered 404
 present, who stays silent. The two differ in nothing except how long they
 appear in the log.
 
-The proof-of-access half of the rule is doing its job here; the administrator
-matches it because they really did log in. What is left is the **count**:
-thirty login POSTs with no time window is a threshold on the length of the
-log, not on anybody's behaviour. The index already carries the timestamps, and
-already counts `login_statuses` — a brute force leaves a long tail of failures
-before it succeeds, and this administrator left none.
+**Fixed.** `logs.login_success` now also requires a BURST: the most login
+POSTs inside any 24 hours. An administrator signing in each working morning
+peaks at one or two; the intruder in `bruteforce-admin` reaches the whole
+flood inside minutes. The flood finding remains — that one really is a fact
+about the log's length — but the break-in claim is now a fact about
+behaviour.
 
 Found by the scale test rather than by inspection: `--scale large` generates
 sixty days of traffic and the site's own editor crossed the threshold.

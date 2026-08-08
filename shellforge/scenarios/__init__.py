@@ -44,6 +44,8 @@ class Case:
     # --- shape, set by the hostile axes (see shellforge/hostile.py) --------
     #: Overrides --log-format when an axis sets it.
     log_format: str = ""
+    #: `mysqldump` or `phpmyadmin`. The real case was the latter.
+    dump_format: str = "mysqldump"
     #: Prepend a UTF-8 BOM to the access log.
     log_bom: bool = False
     #: Line ending the access log is written with.

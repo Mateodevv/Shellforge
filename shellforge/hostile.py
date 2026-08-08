@@ -159,6 +159,36 @@ def hoster_fields(case, rng):
         "part of any rule.")
 
 
+@axis("pma-export",
+      "the database arrives as a phpMyAdmin export rather than a mysqldump.")
+def pma_export(case, rng):
+    """The shape a shared-hosting customer actually hands over.
+
+    MEASURED: the real Joomla export from a case was phpMyAdmin 5.2.3, and
+    every one of its 731 INSERT statements named its columns -- not one was
+    the plain `VALUES` form this generator emitted. That is not an oddity,
+    it is the norm: phpMyAdmin is what a control panel offers, and
+    `mysqldump` needs a shell nobody gives a hosting customer.
+
+    SHELLHOUND READS IT CORRECTLY. That was checked before this axis was
+    written, by running the engine over the same injected value in both
+    shapes and comparing: identical findings, identical accounts, identical
+    table count. So this is not a bug report -- it is the same gap the log
+    formats had, which is a branch the code handles and the test data never
+    reached.
+
+    Nothing may change: the shape of an export is not part of any rule.
+    """
+    case.dump_format = "phpmyadmin"
+    case.truth.note(
+        "THE DUMP IS A phpMyAdmin EXPORT, not a mysqldump: different header, "
+        "`INSERT INTO x (cols) VALUES` instead of plain `VALUES`, keys added "
+        "by `ALTER TABLE` after the data, `START TRANSACTION`/`COMMIT` and no "
+        "`LOCK TABLES`. Measured against a real case export. Not one finding "
+        "may change -- the accounts are read by position and the positions "
+        "are the same.")
+
+
 # --- encoding ---------------------------------------------------------------
 
 @axis("encoding",
