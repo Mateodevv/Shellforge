@@ -21,7 +21,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from shellforge import corpus, markers
-from shellforge.world import Account, Row, Site, Table, SCALES
+from shellforge.world import (Account, Row, Site, Table, SCALES,
+                             php_target)
+from shellforge.world import filler
 
 # --- schema -----------------------------------------------------------------
 # THE REAL COLUMN ORDERS. Shellhound reads WordPress accounts by POSITION
@@ -206,7 +208,7 @@ _ADMIN = [
 
 
 def build(rng, scale: str = "small") -> Site:
-    extra_parts, media_count, post_count, _days, _rpd = SCALES[scale]
+    extra_parts, media_count, post_count, _days, _rpd = SCALES[scale][:5]
 
     version = rng.choice(corpus.WP_VERSIONS)
     site = Site(
@@ -224,6 +226,7 @@ def build(rng, scale: str = "small") -> Site:
         # value that could go here honestly. See the note in bruteforce-admin.
         authenticated_area="",
         guarded_core="/wp-includes/functions.php",
+        language_dir="wp-content/languages",
         quiet_upload_files=["wp-content/uploads/.htaccess",
                             "wp-content/uploads/index.php"],
         content_table="posts", config_table="options",
@@ -356,6 +359,23 @@ def build(rng, scale: str = "small") -> Site:
     site.rows.append(Row(table="options", values={
         "option_id": 2, "option_name": "blogname",
         "option_value": "Beispielbetrieb", "autoload": "yes"}))
+
+    # --- fill the tree out to the size a real installation has -------------
+    filler.fill(
+        rng.derive("bulk"), site, php_target(scale),
+        layout=[("wp-admin/includes", 22),
+                ("wp-includes", 20),
+                ("wp-includes/blocks/block{n}", 14),
+                ("wp-includes/rest-api/endpoints", 8),
+                ("wp-includes/widgets", 6),
+                ("wp-content/plugins/ext{n}/includes", 14),
+                ("wp-content/plugins/ext{n}/admin", 8),
+                ("wp-content/themes/theme{n}/inc", 5),
+                ("wp-includes/sodium_compat/src", 2),
+                ("wp-includes/blocks/block{n}/build/view", 5),
+                ("wp-content/plugins/ext{n}/vendor/lib/src/Core", 4)],
+        guard="if (!defined('ABSPATH')) { exit; }",
+        body_for=lambda name: _core_php(name))
 
     # --- the URL space visitors move through --------------------------------
     site.urls = [(u, 10) for u in corpus.PAGE_SLUGS]

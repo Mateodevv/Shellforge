@@ -308,7 +308,25 @@ uncomfortable:
 | methods | GET, POST, HEAD, OPTIONS | GET, POST | all four |
 | statuses | incl. 429, 403, 500 | five kinds | incl. all |
 
-Three of those mattered more than the rest:
+The webroot was measured the same way, against the real installation from the
+same case:
+
+| | real | before | now |
+|---|---|---|---|
+| files | 1,744 | 149 | 1,528 |
+| `.php` files | 669 | **69 at every scale** | 749 |
+| `.php` size median / p90 | 2,844 / 16,858 | 274 / 301 | 3,166 / 20,018 |
+| `.ini` language files | 382 | 0 | 422 |
+| `.html` index guards | 276 | 3 | 280 |
+| all files, median size | 1,507 | 86 | 1,472 |
+
+The PHP count was not tied to `--scale` at all: `--scale large` grew the log
+and the uploads and left the installation the same 69 files. Precision is
+measured against the files that must stay silent, so it was measuring a tenth
+of the surface it claimed. Two thirds of a real CMS tree is translation files
+and empty `index.html` guards — boring, one line each, and entirely absent.
+
+Three of the log findings mattered more than the rest:
 
 **Neither real log was plain Combined.** One carried an unquoted vhost token
 between the size and the referer; the other carried Plesk's two trailing

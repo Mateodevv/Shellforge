@@ -232,6 +232,22 @@ Einmal-Adressen ohne Referer, Nachtboden, `-`-Größen, HEAD/OPTIONS und
 429/403/500. Alle Werte liegen jetzt in der Spanne der beiden echten Fälle.
 Recall und Precision ändert das nicht — die messen, was sie messen.
 
+### Der Webroot war ein Zehntel so groß wie ein echter
+
+Gegen die echte Joomla-Installation aus demselben Fall gemessen: 1.744
+Dateien und 669 PHP-Dateien mit Median 2.844 Bytes gegen meine 149 bzw. **69
+bei jeder Skala** — die PHP-Zahl war überhaupt nicht an `--scale` gekoppelt.
+Precision wird gegen die Dateien gemessen, die stumm bleiben müssen, also
+maß sie ein Zehntel der Fläche, die sie behauptete. Zwei Drittel eines echten
+CMS-Baums sind außerdem Sprachdateien (382 `.ini`) und leere
+`index.html`-Wächter (276) — langweilig, je eine Zeile, und bei mir gar nicht
+vorhanden.
+
+Jetzt: 1.528 Dateien, 749 PHP mit Median 3.166, 422 `.ini`, 280 `.html`. Die
+Füllung ist nachweislich inert — 120 Fälle bleiben bei Recall und Precision
+100 %, jetzt gegen 750 saubere PHP-Dateien statt 69. Die Laufzeit der Matrix
+steigt von 31 Sekunden auf drei Minuten, was der ehrliche Preis dafür ist.
+
 ### Acht Befunde aus dem Bau
 
 **Bei CVE-2015-1579 hat das Outcome-Gating nichts zu greifen.** `admin-ajax.php`

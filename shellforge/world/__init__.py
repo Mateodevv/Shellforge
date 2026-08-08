@@ -28,11 +28,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 SCALES = {
-    # (extra plugin files, uploaded media, posts, baseline days, requests/day)
-    "small": (3, 12, 14, 6, 120),
-    "medium": (9, 60, 60, 21, 900),
-    "large": (24, 240, 240, 60, 4000),
+    # (extra plugin files, uploaded media, posts, baseline days, requests/day,
+    #  PHP files in the installation)
+    #
+    # THE LAST NUMBER IS MEASURED. A real Joomla webroot from a case held 669
+    # PHP files among 1,744 files and 55.6 MB. This generator produced 69 at
+    # EVERY scale -- the count was not tied to the scale setting at all, so
+    # `--scale large` grew the log and the uploads and left the installation
+    # the same size. Precision is measured against the files that must stay
+    # silent, so that was a quarter of the surface it claimed.
+    "small": (3, 12, 14, 6, 120, 240),
+    "medium": (9, 60, 60, 21, 900, 680),
+    "large": (24, 240, 240, 60, 4000, 1500),
 }
+
+
+def php_target(scale: str) -> int:
+    """How many PHP files the installation should hold at this scale."""
+    return SCALES[scale][5]
 
 
 @dataclass
@@ -96,6 +109,9 @@ class Site:
     #: are 45-48% .css/.js/.jpg/.png, because one page pulls twenty of them.
     #: A generator that only requests pages produces a log no browser made.
     assets: list = field(default_factory=list)
+    #: Where translation files live. In the real Joomla tree the 382
+    #: `.ini` files under it were the single largest group of files.
+    language_dir: str = "language"
     #: Where the active theme/template lives, webroot-relative.
     theme_dir: str = ""
     #: A genuine core file with a bootstrap guard and nothing executable --

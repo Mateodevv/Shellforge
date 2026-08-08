@@ -34,7 +34,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from shellforge import corpus
-from shellforge.world import Account, Row, Site, Table, SCALES
+from shellforge.world import (Account, Row, Site, Table, SCALES,
+                             php_target)
+from shellforge.world import filler
 
 PNG_1PX = bytes.fromhex(
     "89504e470d0a1a0a0000000d494844520000000100000001080600000"
@@ -277,7 +279,7 @@ _SHIPPED_MEDIA = [
 
 
 def build(rng, scale: str = "small") -> Site:
-    extra_parts, media_count, article_count, _days, _rpd = SCALES[scale]
+    extra_parts, media_count, article_count, _days, _rpd = SCALES[scale][:5]
 
     version = rng.choice(corpus.JOOMLA_VERSIONS)
     legacy = version.startswith("3.")
@@ -465,6 +467,29 @@ def build(rng, scale: str = "small") -> Site:
             "created_by": rng.randint(1, len(site.accounts)),
             "publish_up": created.strftime("%Y-%m-%d %H:%M:%S"),
             "access": 1, "language": "*"}))
+
+    # --- fill the tree out to the size a real installation has -------------
+    # MEASURED: administrator/ held 1,116 of 1,744 files in the real webroot,
+    # which is why it carries most of the weight here. A generated tree that
+    # put everything under components/ would have the right count and the
+    # wrong shape, and the shape is what a path-based rule reads.
+    filler.fill(
+        rng.derive("bulk"), site, php_target(scale),
+        layout=[("administrator/components/com_ext{n}/src", 26),
+                ("administrator/components/com_ext{n}/tmpl", 14),
+                ("administrator/modules/mod_admin{n}", 8),
+                ("components/com_ext{n}/src", 12),
+                ("components/com_ext{n}/tmpl", 8),
+                ("modules/mod_site{n}", 7),
+                ("plugins/system/plg_sys{n}", 7),
+                ("plugins/content/plg_con{n}", 5),
+                ("libraries/src/Service{n}", 8),
+                ("libraries/vendor/pkg{n}/src", 3),
+                ("administrator/components/com_ext{n}/src/Controller/Admin", 6),
+                ("administrator/components/com_ext{n}/src/Model/Entity", 5),
+                ("libraries/vendor/pkg{n}/src/Internal/Support/Impl", 4)],
+        guard=JEXEC,
+        body_for=lambda name: _core_php(name, "Joomla.Libraries"))
 
     # --- the URL space visitors move through --------------------------------
     site.urls = [(u, 10) for u in corpus.JOOMLA_PAGE_SLUGS]

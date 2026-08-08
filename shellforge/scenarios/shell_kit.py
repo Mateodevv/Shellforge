@@ -53,7 +53,7 @@ KIT = [
 
 @register("shell-kit")
 def build(rng, site, scale: str = "small") -> Case:
-    _p, _m, _po, days, per_day = SCALES[scale]
+    _p, _m, _po, days, per_day = SCALES[scale][:5]
     truth = GroundTruth(seed=rng.seed, scenario="shell-kit",
                         cms=site.kind, cms_version=site.version)
     case = Case(site=site, truth=truth, files=dict(site.files))
