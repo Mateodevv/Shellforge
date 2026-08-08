@@ -12,7 +12,7 @@ product. The evidence is only what it talks about.
 | | |
 |---|---|
 | **Output** | A case directory Shellhound can be pointed at, plus ground truth |
-| **Measures** | Recall, precision, and which of the 34 rules a case exercises at all |
+| **Measures** | Recall, precision, and which of Shellhound's rules a case exercises at all |
 | **Dependencies** | None. Standard library only, like Shellhound's own tests |
 | **Payloads** | Inert markers in the spirit of an EICAR file. Never working code |
 
@@ -36,7 +36,7 @@ bruteforce-admin         wordpress   100.0%     100.0%      3   ok
 ...
 wp-upload-shell          wordpress   100.0%     100.0%     12   ok
 
-COMBINED COVERAGE  100.0%  (34/34 rules exercised by the catalogue)
+COMBINED COVERAGE  100.0%  (all rules exercised by the catalogue)
 
 PASS
 ```
@@ -100,7 +100,8 @@ shellforge scenarios
 | `--seed N` | Same seed, same bytes. A failure is reproducible or it is a rumour |
 | `--scale small\|medium\|large` | Roughly 900 / 19,000 / 250,000 log lines |
 | `--rotate-days N` | Split the log into `access.log`, `.1`, `.2.gz`, … |
-| `--log-format apache\|nginx` | |
+| `--log-format apache\|nginx\|vhost\|plesk` | The last two are what real hosters write |
+| `--hostile a,b\|all` | Reshape the evidence: see *Hostile axes* |
 | `--no-verify-readable` | Skip reading every file back. See *Virus scanners* below |
 
 ## What a case looks like
@@ -160,8 +161,8 @@ forgotten.
 
 ## Scenarios
 
-Ten scenarios across two CMS profiles — 17 valid pairings, together
-exercising all 34 of Shellhound's rules.
+Twelve scenarios across two CMS profiles — 20 valid pairings, together
+exercising every rule Shellhound has that a generator can reach.
 
 | Scenario | CMS | What it is for |
 |---|---|---|
