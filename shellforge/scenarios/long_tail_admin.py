@@ -1,22 +1,24 @@
 # shellforge/scenarios/long_tail_admin.py
 """long-tail-admin -- nothing happened, for long enough that it looks like it did.
 
-THIS SCENARIO IS A BUG REPORT WITH EVIDENCE ATTACHED.
+THIS SCENARIO WAS A BUG REPORT WITH EVIDENCE ATTACHED. THE BUG IS FIXED;
+THE SCENARIO STAYS AS THE GUARD AGAINST ITS RETURN.
 
-`logs.login_flood` triggers on thirty login POSTs from one address, and
-`logs.login_success` on thirty plus at least one 3xx. Neither counts within a
-time window. So the threshold is not a statement about behaviour -- it is a
-statement about how long somebody kept their logs.
+The report: `logs.login_flood` triggered on thirty login POSTs from one
+address and `logs.login_success` on the flood plus a 2xx from the
+authenticated backend, and neither counted within a time window. So the
+threshold was not a statement about behaviour -- it was a statement about
+how long somebody kept their logs. One administrator, one office address,
+one login every working morning, and after eight weeks the case reported a
+"possible successful brute-force" at HIGH.
 
-One administrator, one office address, one login every working morning, each
-answered with the redirect that a successful login produces:
-
-    after 6 weeks    ~30 logins   -> flood.  MEDIUM.
-    after 8 weeks    ~40 logins   -> "possible successful brute-force". HIGH.
-
-Nothing about the site changed. Nobody attacked it. The finding appeared
-because the case covers a longer period, and it lands at the top of the work
-list with the wording an analyst reads as a confirmed compromise.
+The fix (SHELLHOUND 0.2.0): the HIGH now requires the flood to be a BURST --
+thirty login POSTs inside one 24 h window -- and this administrator's
+busiest 24 hours hold one or two. The MEDIUM flood deliberately kept its
+plain count: on real logs, a window there silences slow credential-stuffing
+campaigns (80-plus failures spread over days), which in count-per-window
+terms are indistinguishable from an administrator. Its sentence carries the
+rate, so it refutes itself on a long-lived administrator.
 
 THE CASE IS CONSTRUCTED SO IT CANNOT BE ARGUED WITH:
 
@@ -31,12 +33,12 @@ THE CASE IS CONSTRUCTED SO IT CANNOT BE ARGUED WITH:
     below the threshold, so the case shows the crossover rather than just the
     far side of it.
 
-WHAT THE GROUND TRUTH SAYS. It expects the findings, because that is what a
-correct run of the current rules produces, and a scenario that expected
-silence would just be a red build blaming Shellforge. The judgement is in the
-notes. If the rules gain a time window, these plants stop firing and the
-scorer reports the change as a MISS -- which is the right way round: somebody
-then edits this file deliberately.
+WHAT THE GROUND TRUTH SAYS. The long administrator still expects the MEDIUM
+flood -- that is what a correct run of the current rules produces -- and
+expects NO break-in finding: `common.login_rules_for` reads the busiest
+window, exactly as SHELLHOUND does. If the HIGH ever loses its burst gate,
+the administrator is accused again and the scorer reports the extra finding
+-- which is the right way round: somebody then edits this file deliberately.
 """
 from __future__ import annotations
 
@@ -154,25 +156,24 @@ def build(rng, site, scale: str = "small") -> Case:
     truth.note(
         "NO ATTACK IS PRESENT IN THIS CASE. The webroot is a clean "
         "installation, the database is untouched, and every probe in the log "
-        "was answered 404. Two administrators do ordinary work. One of them "
-        "is reported at HIGH as a possible successful brute-force, and the "
-        "only thing separating them is the number of days each appears in "
-        "the log.")
+        "was answered 404. Two administrators do ordinary work. The "
+        "longer-serving one still collects the MEDIUM login-flood -- a plain "
+        "count crossed by longevity, with the self-refuting rate in its own "
+        "sentence -- and the only thing separating the two administrators is "
+        "the number of days each appears in the log.")
     truth.note(
-        "WHAT IS LEFT AFTER THE REDIRECT FIX. `logs.login_success` used to "
-        "accept a redirect as proof of a successful login, which Joomla "
-        "hands out for every attempt regardless; it now requires a 2xx from "
-        "the authenticated backend, which is right. This administrator "
-        "produces that signal too -- because they really did log in. So the "
-        "remaining question is not the discriminator but the COUNT: thirty "
-        "login POSTs with no time window is a threshold on the length of the "
-        "log, not on anybody's behaviour.")
+        "WHY THERE IS NO HIGH FINDING HERE ANY MORE. `logs.login_success` "
+        "first required a redirect (which Joomla hands out for every attempt "
+        "regardless), then a 2xx from the authenticated backend (which the "
+        "administrator produces too, because they really did log in). Since "
+        "SHELLHOUND 0.2.0 it also requires the flood to be a BURST -- thirty "
+        "login POSTs inside one 24 h window. This administrator's busiest "
+        "24 hours hold one or two, so the accusation no longer fires; an "
+        "actual guessing campaign concentrates far more than that.")
     truth.note(
-        "SUGGESTED SHAPE OF A FIX, for whoever picks this up: the index "
-        "already knows the timestamps. A flood is thirty attempts in a "
-        "WINDOW, not thirty attempts. A second discriminator that costs "
-        "nothing is already being counted -- `login_statuses`: a brute force "
-        "produces a long tail of failures before it succeeds, and this "
-        "administrator produced none. Every POST here was answered on the "
-        "first try.")
+        "WHY THE MEDIUM KEPT ITS PLAIN COUNT. A window on the flood itself "
+        "would silence slow credential stuffing -- real campaigns of 80-plus "
+        "failed POSTs spread over days look exactly like an administrator in "
+        "count-per-window terms. The flood therefore stays a count and says "
+        "its own rate; the burst gate sits only on the accusation.")
     return case
