@@ -249,14 +249,30 @@ def decide(case_db: Path, artifacts: dict) -> dict:
 
 
 def snapshot(case_db: Path) -> dict:
-    """Everything the comparison needs, as plain data."""
+    """Everything the comparison needs, as plain data.
+
+    `retired` mirrors SHELLHOUND's definition (case schema 5): a row whose
+    engine has a completed run newer than the run that last reproduced the
+    row is no longer a current statement. Read here with the same LEFT JOIN
+    the server uses, so the check measures the mechanism rather than
+    reimplementing it; against an older SHELLHOUND without the columns every
+    row reads as current, which is exactly what that version believes."""
     uri = f"file:{Path(case_db).as_posix()}?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute(
-            "SELECT fingerprint, artifact, rule_id, line, triage, triage_note "
-            "FROM findings").fetchall()
+        try:
+            rows = conn.execute(
+                "SELECT f.fingerprint, f.artifact, f.rule_id, f.line, "
+                "f.triage, f.triage_note, "
+                "CASE WHEN done.value IS NULL OR f.seen_run >= "
+                "CAST(done.value AS INTEGER) THEN 0 ELSE 1 END AS retired "
+                "FROM findings f LEFT JOIN meta done "
+                "ON done.key = 'engine_done:' || f.engine").fetchall()
+        except sqlite3.OperationalError:
+            rows = conn.execute(
+                "SELECT fingerprint, artifact, rule_id, line, triage, "
+                "triage_note, 0 AS retired FROM findings").fetchall()
     finally:
         conn.close()
     return {r["fingerprint"]: dict(r) for r in rows}
@@ -292,20 +308,26 @@ def compare(before: dict, after: dict, decided: dict) -> dict:
 
     # SPLIT: the same rule on the same artifact, twice -- once carrying a
     # decision at the line it used to be on, once undecided at the line it is
-    # on now. The decision technically survived; what it is attached to no
-    # longer exists. This is what editing a file ABOVE its payload does, and
-    # it is the one shape in which "triage survives a re-scan" is true and
-    # unhelpful at the same time.
+    # on now. This is what editing a file ABOVE its payload does. Since
+    # SHELLHOUND retires the rows a completed re-scan did not reproduce
+    # (case schema 5), the split has an honest form and a broken one:
+    # predecessor RETIRED means the case says "decided at line 2, not seen
+    # again; new question at line 4" -- true, if annoying. Predecessor still
+    # CURRENT means the case asserts a decided finding at a line that holds
+    # nothing, beside its replacement -- the measured defect of issue #7.
     decided_by_key = {(r["artifact"], r["rule_id"]): r
                       for r in before.values() if r["triage"] != "new"}
     split = []
     for row in fresh:
         was = decided_by_key.get((row["artifact"], row["rule_id"]))
         if was and was["line"] != row["line"]:
+            stale = after.get(was["fingerprint"])
             split.append({"artifact": row["artifact"],
                           "rule": row["rule_id"],
                           "decided_line": was["line"], "was": was["triage"],
-                          "now_line": row["line"]})
+                          "now_line": row["line"],
+                          "predecessor_retired": bool(
+                              stale and stale.get("retired"))})
     return {
         "decided_artifacts": decided,
         "kept": kept, "lost": lost, "changed": changed,
@@ -315,14 +337,17 @@ def compare(before: dict, after: dict, decided: dict) -> dict:
 
 
 def ok(result: dict) -> bool:
-    """`split` is NOT a failure here, deliberately.
+    """A split now has a passing form and a failing one.
 
-    It is a real defect and it is reproduced rather than asserted away -- the
-    same convention `ghost-shell` uses. Failing on it would make every run red
-    for a bug that is already known and already written down, and a build that
-    is permanently red stops being read. It is reported, loudly, every time.
-    """
-    return not (result["lost"] or result["changed"] or result["inherited"])
+    The split itself is not a failure: the moved payload really is a new
+    question, and SHELLHOUND states it while retiring the row it replaced.
+    A split whose predecessor was NOT retired is the old defect standing --
+    a decided finding asserted as current at a line that holds nothing --
+    and since the retirement mechanic shipped, this check demands it."""
+    stale_splits = [s for s in result["split"]
+                    if not s.get("predecessor_retired")]
+    return not (result["lost"] or result["changed"]
+                or result["inherited"] or stale_splits)
 
 
 def _short(artifact: str) -> str:
@@ -368,19 +393,23 @@ def report(result: dict) -> str:
         out.append("")
 
     if result.get("split"):
-        out.append("SPLIT -- the decision survived, what it describes did not")
-        out.append("  (not counted as a failure; see `evolve.ok`)")
+        out.append("SPLIT -- the payload moved and the finding moved with it")
         for bad in result["split"]:
             out.append(f"  {_short(bad['artifact'])}: {bad['rule']}")
-            out.append(f"      {bad['was']} at line {bad['decided_line']}, "
-                       f"where there is now nothing")
-            out.append(f"      new and undecided at line {bad['now_line']}, "
-                       f"where the payload actually is")
-        out.append("      A file edited ABOVE its payload moves every content")
-        out.append("      finding in it. `line` is part of the fingerprint, so")
-        out.append("      the old finding keeps the decision and the real one")
-        out.append("      comes back undecided -- the analyst is asked twice")
-        out.append("      and the case reports one problem as two.")
+            if bad.get("predecessor_retired"):
+                out.append(f"      {bad['was']} at line "
+                           f"{bad['decided_line']} was RETIRED -- kept, "
+                           f"greyed, no longer asserted as current")
+                out.append(f"      new and undecided at line "
+                           f"{bad['now_line']}, where the payload actually "
+                           f"is: an honest new question")
+            else:
+                out.append(f"      {bad['was']} at line "
+                           f"{bad['decided_line']} STILL STANDS AS CURRENT, "
+                           f"where there is now nothing -- FAIL")
+                out.append(f"      new and undecided at line "
+                           f"{bad['now_line']}: the case reports one "
+                           f"problem as two")
         out.append("")
 
     out.append("PASS" if ok(result) else "FAIL")
