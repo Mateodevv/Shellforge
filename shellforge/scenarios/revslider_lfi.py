@@ -17,17 +17,21 @@ Shellhound's outcome gating is a status code. Its stated principle -- a probe
 becomes a finding only when at least one of those requests was answered 2xx --
 is right, and here it separates nothing: every request in this case is 2xx.
 The discriminator that does exist is the RESPONSE SIZE, which the combined
-log format carries in a column nothing currently reads.
+log format has carried all along -- and which the finding's EVIDENCE now
+states (since the issue this scenario was filed for was implemented): the
+sizes are reported, never gated on, because the honest threshold does not
+exist -- an attacker's own successes and failures both shape any
+per-endpoint distribution.
 
 So the case contains two addresses sending the SAME requests:
 
     exfiltrated   answered 200 with 3-5 KB. The credentials left the server.
     repelled      answered 200 with 41 bytes. Nothing left the server.
 
-A correct run today reports them identically, and the ground truth says so
-rather than pretending otherwise. What the case asserts is that this is
-CURRENT behaviour; what it documents is that one column would tell them
-apart.
+A correct run reports both at the same rule and the same weight -- the tool
+does not claim to know which one exfiltrated -- but their evidence now
+reads `responses 2,900-5,200 bytes` against `responses 41 bytes`, and the
+analyst tells them apart from the finding itself.
 
 THE SECOND HALF OF THE STORY IS WHERE THE PLUGIN LIVES. Slider Revolution was
 bundled inside dozens of commercial themes, so the victims did not know they
@@ -141,33 +145,36 @@ def build(rng, site, scale: str = "small") -> Case:
                 "nothing was read")
 
     # --- what a correct run reports today -----------------------------------
-    # Both. Identically. Four of the seven targets carry two or more `../`,
-    # and every request was answered 2xx, so the traversal rule fires on both
-    # addresses at the same weight.
+    # Both, at the same rule and the same weight: four of the seven targets
+    # carry two or more `../`, and every request was answered 2xx. What
+    # differs is the EVIDENCE -- it states each address's answer sizes, so
+    # kilobytes and 41 bytes stop reading as the same sentence.
     for ip, what in ((got_it, "read the credentials"),
                      (missed, "read nothing at all")):
         truth.plant(Planted(
             kind="client", ident=ip,
             expect_rules=["logs.traversal"], expect_severity="medium",
-            note=f"traversal patterns answered 2xx. This address {what}, and "
-                 f"the finding is the same either way -- every request in "
-                 f"this case is a 200, so the outcome gate has nothing to "
-                 f"gate on"))
+            note=f"traversal patterns answered 2xx. This address {what}; "
+                 f"the rule and the severity are the same either way -- "
+                 f"every request in this case is a 200 -- and the evidence "
+                 f"carries the answer sizes that tell the two apart"))
 
     truth.meta["byte_counts"] = {
         got_it: "2900-5200 per request (the file came back)",
         missed: f"{EMPTY_ANSWER} per request (nothing came back)",
     }
     truth.note(
-        "THE TWO ADDRESSES ARE INDISTINGUISHABLE BY ANY RULE IN THE TOOL, "
-        "and one of them walked off with the database credentials. Outcome "
-        "gating on the status code is right in general and useless here: "
+        "THE TWO ADDRESSES CARRY THE SAME RULE AT THE SAME WEIGHT, and one "
+        "of them walked off with the database credentials. Outcome gating "
+        "on the status code is right in general and useless here: "
         "`admin-ajax.php` answers 200 whether the read worked or not, which "
         "is exactly why this CVE was worth having. The discriminator is the "
-        "RESPONSE SIZE -- kilobytes against 41 bytes -- and the combined log "
-        "format has carried it all along, in a column nothing reads. The "
-        "ground truth records the sizes under `byte_counts` so a future rule "
-        "has something to be checked against.")
+        "RESPONSE SIZE -- kilobytes against 41 bytes -- and since the issue "
+        "this scenario was filed for was implemented, the finding's "
+        "evidence states each address's sizes: reported, never gated on, "
+        "because the honest threshold does not exist. The ground truth "
+        "records the sizes under `byte_counts` so the sentences can be "
+        "checked against something.")
     truth.note(
         "NOTHING WAS DROPPED. This is a read, not a write: the webroot is "
         "untouched and the database export is clean. Any file finding in "
@@ -186,11 +193,11 @@ def build(rng, site, scale: str = "small") -> Case:
             "the read succeeded, and the status code will not tell you: this "
             "endpoint answers 200 either way. Compare the response SIZES -- "
             "a few kilobytes means the file came back, a few dozen bytes "
-            "means it did not. Do NOT expect the CMS inventory to confirm "
-            "the slider is installed: on most affected sites it was bundled "
-            "inside a commercial theme, and the inventory reads "
-            "wp-content/plugins. Look for the directory instead, under the "
-            "active theme.",
+            "means it did not. On most affected sites the slider was bundled "
+            "inside a commercial theme; the CMS inventory lists such a copy "
+            "as 'Plugin (bundled in theme <slug>)' -- an inferred entry, "
+            "found by a bounded walk below the theme, not in "
+            "wp-content/plugins.",
     }]
 
     common.plant_scanners(truth, case.requests)
